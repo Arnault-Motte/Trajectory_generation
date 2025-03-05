@@ -4,15 +4,16 @@ import os
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
-
+import datetime
 
 import matplotlib.pyplot as plt
-import torch
 
 import pandas as pd
-from data_orly.data_preprocessed.data_process import Data_cleaner
-from data_orly.display_scripts.test_display import Displayer
-from data_orly.VAE_FCL.vae_fcl import *  # noqa: F403
+from data_orly.src.generation.models.auto_encoder_fcl import *  # noqa: F403
+from data_orly.src.generation.data_process import Data_cleaner
+from data_orly.src.generation.test_display import Displayer
+from traffic.algorithms.generation import compute_latlon_from_trackgs
+from traffic.core import Traffic
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -38,7 +39,7 @@ def main()->int:
     hidden_dim_1 = 218
     hidden_dim_2 = 128
     latent_dim = 64
-    model = VAE_FCL(  # noqa: F405
+    model = AE_FCL(  # noqa: F405
         hidden_dim_1, hidden_dim_2, latent_dim, seq_len, num_channels
     ).to(device)
 
@@ -51,7 +52,7 @@ def main()->int:
     print(x_recon.shape, "\n")
 
     traffic_f = data_cleaner.output_converter(x_recon)
-    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f,plot_path="data_orly/VAE_FCL_Recons.png")  # noqa: E501
+    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f)  # noqa: E501
     return 0
 
 
