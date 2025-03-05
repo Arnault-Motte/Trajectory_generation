@@ -6,7 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 import pandas as pd
 from traffic.algorithms.generation import compute_latlon_from_trackgs
-from traffic.core import Traffic
+from traffic.core import Flight, Traffic
 
 
 class Data_cleaner:
@@ -98,7 +98,7 @@ class Data_cleaner:
         return mean_point
 
     ### Function to unscale the data
-    def unscale(self, traj) -> np.ndarray:
+    def unscale(self, traj: Traffic) -> np.ndarray:
         original_shape = traj.shape
         traj_reshaped = traj.reshape(-1, original_shape[-1])
         traj_unscaled = self.scaler.inverse_transform(traj_reshaped)
@@ -111,3 +111,12 @@ class Data_cleaner:
         return [
             flight.data["timedelta"][:n_point] for flight in traf[:n_flight]
         ]
+
+
+def filter_outlier(traff: Traffic) -> Traffic:
+    def simple(flight:Flight) -> Flight:
+        return flight.assign(simple=lambda x: flight.shape.is_simple)
+
+    t_to = traff.iterate_lazy().pipe(simple).eval(desc ="")
+    t_to = t_to.query("simple")
+    return t_to

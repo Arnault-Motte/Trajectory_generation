@@ -4,16 +4,11 @@ import os
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
-import datetime
+import torch
 
-import matplotlib.pyplot as plt
-
-import pandas as pd
+from data_orly.src.generation.data_process import Data_cleaner, filter_outlier
 from data_orly.src.generation.models.auto_encoder_fcl import *  # noqa: F403
-from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.test_display import Displayer
-from traffic.algorithms.generation import compute_latlon_from_trackgs
-from traffic.core import Traffic
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -52,7 +47,10 @@ def main()->int:
     print(x_recon.shape, "\n")
 
     traffic_f = data_cleaner.output_converter(x_recon)
-    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f)  # noqa: E501
+    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f,plot_path="data_orly/figures/AE_FCL.png")  # noqa: E501
+    filtered_traffic  = filter_outlier(traffic_f)
+    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, filtered_traffic,plot_path="data_orly/AE_FCL_filtered.png")  # noqa: E501
+    traffic_f.data.to_pickle('data_orly/generated_traff/reproducted/AE_FCL_reproducted_traff.pkl')
     return 0
 
 

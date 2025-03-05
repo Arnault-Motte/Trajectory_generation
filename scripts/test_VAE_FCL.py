@@ -6,17 +6,16 @@ sys.path.append(
 )
 
 
-import matplotlib.pyplot as plt
+
 import torch
 
-import pandas as pd
-from data_orly.src.generation.data_process import Data_cleaner
-from data_orly.src.generation.test_display import Displayer
+from data_orly.src.generation.data_process import Data_cleaner, filter_outlier
 from data_orly.src.generation.models.vae_fcl import *  # noqa: F403
+from data_orly.src.generation.test_display import Displayer
 
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-)
+# sys.path.append(
+#     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# )
 
 
 def main()->int:
@@ -25,7 +24,7 @@ def main()->int:
     print(device)
     ## Getting the data
     displayer = Displayer()
-    data_cleaner = Data_cleaner("data_orly/landings_LFPO_06.pkl")
+    data_cleaner = Data_cleaner("data_orly/data/landings_LFPO_06.pkl")
     data = data_cleaner.clean_data()
 
     #mean_end = data_cleaner.get_mean_end_point()
@@ -51,7 +50,10 @@ def main()->int:
     print(x_recon.shape, "\n")
 
     traffic_f = data_cleaner.output_converter(x_recon)
-    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f,plot_path="data_orly/VAE_FCL_Recons.png")  # noqa: E501
+    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, traffic_f,plot_path="data_orly/figures/VAE_FCL_Recons.png")  # noqa: E501
+    filtered_traffic  = filter_outlier(traffic_f)
+    displayer.plot_compare_traffic(data_cleaner.basic_traffic_data, filtered_traffic,plot_path="data_orly/figures/VAE_FCL_filtered.png")  # noqa: E501
+    traffic_f.data.to_pickle('data_orly/generated_traff/reproducted/VAE_FCL_reproducted_traff.pkl')
     return 0
 
 
