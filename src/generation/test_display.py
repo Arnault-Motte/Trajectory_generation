@@ -18,7 +18,7 @@ class Displayer():
         n_trajectories=None,
         background=True,
         plot_path="data_orly/plot.png",
-    ):
+    )  :
         if not n_trajectories:
             n_trajectories = len(generated_traffic)
 

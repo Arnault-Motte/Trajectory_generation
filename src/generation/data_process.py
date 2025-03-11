@@ -2,11 +2,17 @@ import datetime
 
 import torch
 from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader
 
 import numpy as np
 import pandas as pd
+from numpy._typing._array_like import NDArray
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
+
+
+
+
 
 
 class Data_cleaner:
@@ -22,6 +28,17 @@ class Data_cleaner:
         self.n_traj = len(self.basic_traffic_data)
         self.seq_len = seq_len
         self.num_channels = len(columns)
+
+    def dataloader_traffic_converter(self,data : DataLoader,num_epoch :int) -> Traffic:
+        list_traff = []
+        i = 0
+        for batch in data:
+            if i == num_epoch:
+                break
+            i+=1
+            list_traff.append(batch[0])
+        total_tensor = torch.cat(list_traff,dim = 0)
+        return self.output_converter(total_tensor)
 
     def output_converter(self, x_recon: torch.Tensor) -> Traffic:
         mean_point = self.get_mean_end_point()
@@ -120,3 +137,47 @@ def filter_outlier(traff: Traffic) -> Traffic:
     t_to = traff.iterate_lazy().pipe(simple).eval(desc ="")
     t_to = t_to.query("simple")
     return t_to
+
+#Returns true if the flight path is considered smooth enough checks at each segment that it is in a similar direction as the precedent n_segment
+def flight_soft(flight: Flight,n_segment :int = 3, limit :float = 0) ->  bool:
+    # data = flight.data
+    # latitudes = data["latitude"]
+    # longitude = data["longitude"]
+    # latitude_vectors = latitudes[1:] - latitudes[:-1]
+    # longitude_vectors = longitude[1:] - longitude[:-1]
+    # latitudes_padding = pd.Series([0 for _ in range(n_segment-1)],name="latitude")
+    # longitude_padding = pd.Series([0 for _ in range(n_segment-1)],name="longitude")
+    # latitude_vectors = pd.concat([latitudes_padding,latitude_vectors])
+    # longitude_vectors = pd.concat([longitude_padding,longitude_vectors])
+    # latitude_mean_vectors = latitude_vectors.rolling(window=n_segment).mean()
+    # longitude_mean_vectors = longitude_vectors.rolling(window=n_segment).mean()
+    # dot_product = (latitude_vectors[n_segment-1:] * latitude_mean_vectors[n_segment-1:] ) + (longitude_vectors[n_segment-1:]  * longitude_mean_vectors[n_segment-1:] )
+    # return (dot_product > limit).any()
+    data = flight.data
+    latitudes = data["latitude"]
+    longitude = data["longitude"]
+
+    # Compute vectors between consecutive points
+    latitude_vectors = latitudes.diff().fillna(0)
+    longitude_vectors = longitude.diff().fillna(0)
+
+    # Compute rolling means of the vectors
+    latitude_mean_vectors = latitude_vectors.rolling(window=n_segment).mean()
+    longitude_mean_vectors = longitude_vectors.rolling(window=n_segment).mean()
+
+    # Compute dot product
+    dot_product = (latitude_vectors * latitude_mean_vectors) + (longitude_vectors * longitude_mean_vectors)
+
+    # Check if any dot product exceeds the limit
+    return (dot_product > limit).any()
+
+def filter_smoothness(traff: Traffic,n_segment :int = 3, limit :float = 0) -> Traffic:
+    def simple(flight:Flight) -> Flight:
+        test_val = flight_soft(flight,n_segment,limit)
+        return flight.assign(simple=lambda _: test_val)
+
+    t_to = traff.iterate_lazy().pipe(simple).eval(desc ="")
+    t_to = t_to.query("simple")
+    return t_to
+
+

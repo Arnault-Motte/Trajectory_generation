@@ -10,7 +10,7 @@ sys.path.append(
 import torch
 
 from data_orly.src.generation.data_process import Data_cleaner, filter_outlier
-from data_orly.src.generation.models.vae_fcl import *  # noqa: F403
+from data_orly.src.generation.models.VAE_FCL import *  # noqa: F403
 from data_orly.src.generation.test_display import Displayer
 
 # sys.path.append(

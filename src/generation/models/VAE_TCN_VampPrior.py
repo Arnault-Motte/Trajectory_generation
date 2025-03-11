@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 
 
+# Creates a train and test dataloader from a numpy array.
 def get_data_loader(
     data: np.ndarray, batch_size: int, train_split: float = 0.8
 ) -> tuple[DataLoader, DataLoader]:
@@ -24,7 +25,7 @@ def get_data_loader(
 
 
 # %%
-# Loss function
+# MSE loss for reconstruction
 def reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
     return F.mse_loss(x_recon, x, reduction="sum")
 
@@ -34,68 +35,73 @@ def negative_log_likehood(
 ) -> torch.Tensor:
     mu = recon
     dist = distrib.Normal(mu, scale)
-    log_likelihood = dist.log_prob(x)  # Calculate log-likelihood for each pixel
-    return -log_likelihood.sum(
-        dim=[i for i in range(1, len(x.size()))]
-    )  # Return negative log-likelihood (as loss)
+    log_likelihood = dist.log_prob(x)
+    return -log_likelihood.sum(dim=[i for i in range(1, len(x.size()))])
 
 
+# Normal KL loss for gaussian prior
 def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     var = torch.exp(logvar)
     kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - var)
     return kl_divergence
 
 
-def other_kl_loss(
+def create_mixture(
+    mu: torch.Tensor, log_var: torch.Tensor
+) -> distrib.MixtureSameFamily:
+    n_components = mu.size(0)
+    if torch.isnan(mu).any():
+        print("NaN detected in mu")
+    if torch.isnan(log_var).any():
+        print("NaN detected in log_var")
+    dist = distrib.MixtureSameFamily(
+        distrib.Categorical(
+            logits=torch.ones((n_components), device=mu.device)
+        ),
+        component_distribution=distrib.Independent(
+            distrib.Normal(mu, (log_var / 2).exp()), 1
+        ),
+    )
+    return dist
+
+
+def create_distrib_posterior(
+    mu: torch.Tensor, log_var: torch.Tensor
+) -> distrib.Distribution:
+    return distrib.Independent(distrib.Normal(mu, (log_var / 2).exp()), 1)
+
+
+def vamp_prior_kl_loss(
     z: torch.Tensor,
     mu: torch.Tensor,
     log_var: torch.Tensor,
+    pseudo_mu: torch.Tensor,
+    pseudo_log_var: torch.Tensor,
 ) -> torch.Tensor:
-    n = mu.size(1)
-    device = mu.device
-    prior_mu = torch.zeros((1, n)).to(device)
-    prior_log_var = torch.zeros((1, n)).to(device)
-    prior = distrib.Independent(
-        distrib.Normal(prior_mu, (prior_log_var / 2).exp()), 1
-    )
-    posterior = distrib.Independent(distrib.Normal(mu, (log_var / 2).exp()), 1)
+    prior = create_mixture(pseudo_mu, pseudo_log_var)
+    posterior = create_distrib_posterior(mu, log_var)
     log_prior = prior.log_prob(z)
     log_posterior = posterior.log_prob(z)
-
     return log_posterior - log_prior
 
 
-def vae_loss(
+# Vamp prior loss
+def VAE_vamp_prior_loss(
     x: torch.Tensor,
     x_recon: torch.Tensor,
+    z: torch.Tensor,
     mu: torch.Tensor,
     logvar: torch.Tensor,
+    pseudo_mu: torch.Tensor,
+    pseudo_log_var: torch.Tensor,
     scale: torch.Tensor = None,
     beta: float = 1,
 ) -> torch.Tensor:
     recon_loss = negative_log_likehood(x, x_recon, scale)
     # Compute KL divergence
     batch_size = x.size(0)
-    kl = kl_loss(mu, logvar) / batch_size
-    return recon_loss.mean() + beta * kl
-
-
-def manul_recons(
-    x: torch.Tensor, x_recon: torch.Tensor, scale: torch.Tensor
-) -> torch.Tensor:
-    dim = x.size(1) * x.size(2)
-    batch = x.size(0)
-    temp_scale = torch.exp(scale) ** 2
-    test = (
-        -1
-        / 2
-        * dim
-        * batch
-        * torch.log(2 * torch.Tensor([torch.pi]).to(x.device))
-        - 1 / 2 * dim * batch * torch.log(temp_scale)
-        - 1 / (2 * temp_scale.item()) * F.mse_loss(x, x_recon, reduction="sum")
-    )
-    return test
+    kl_loss = vamp_prior_kl_loss(z, mu, logvar, pseudo_mu, pseudo_log_var)
+    return recon_loss.mean() + beta * kl_loss.mean()
 
 
 # Basic TCN blocks
@@ -109,7 +115,7 @@ class TCNBlock(nn.Module):
         dilation: int,
         dropout: float,
         active: bool = True,
-    ) -> None:
+    ):
         super(TCNBlock, self).__init__()
         self.conv = weight_norm(
             nn.Conv1d(
@@ -137,6 +143,7 @@ class TCNBlock(nn.Module):
         return x
 
 
+# Residual TCN block
 class TCN_residual_block(nn.Module):
     def __init__(
         self,
@@ -147,7 +154,7 @@ class TCN_residual_block(nn.Module):
         dilation: int,
         dropout: float,
         last: bool = False,
-    ) -> None:
+    ):
         super(TCN_residual_block, self).__init__()
         self.tcn1 = TCNBlock(
             in_channels, out_channels, kernel_size, stride, dilation, dropout
@@ -185,6 +192,7 @@ class TCN_residual_block(nn.Module):
         return out
 
 
+# TCN formed of n_block blocks
 class TCN(nn.Module):
     def __init__(
         self,
@@ -235,7 +243,7 @@ class TCN(nn.Module):
         return x
 
 
-## Encoder decoder and model
+## Encoder
 class TCN_encoder(nn.Module):
     def __init__(
         self,
@@ -265,19 +273,18 @@ class TCN_encoder(nn.Module):
         self.dense_dim = latent_channels * seq_len // avgpoolnum
         self.mu_layer = nn.Linear(self.dense_dim, latent_dim)
         self.logvar_layer = nn.Linear(self.dense_dim, latent_dim)
-        self.hardtan = nn.Hardtanh(min_val=-6.0, max_val=2.0)
         self.flaten = nn.Flatten()
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.tcn(x)
         x = self.avgpool(x)
         x = self.flaten(x)
         mu = self.mu_layer(x)
         log_var = self.logvar_layer(x)
-        log_var = self.hardtan(log_var)
         return mu, log_var
 
 
+## Decoder
 class TCN_decoder(nn.Module):
     def __init__(
         self,
@@ -309,19 +316,48 @@ class TCN_decoder(nn.Module):
             nb_blocks,
         )
         self.sampling_factor = upsamplenum
-        self.dense_log_std = nn.Linear(latent_dim, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        log_std = self.dense_log_std(x)
         x = self.first_dense(x)
         b, _ = x.size()
         x = x.view(b, -1, int(self.seq_len / self.sampling_factor))
         x = self.upsample(x)
         x = self.tcn(x)
-        return x, log_std
+        return x
 
 
-class VAE_TCN(nn.Module):
+# VampPrior Pseudo inputs generator
+class Pseudo_inputs_generator(nn.Module):
+    def __init__(
+        self,
+        number_of_channels: int,
+        number_of_points: int,
+        pseudo_inputs_num: int,
+    ) -> None:
+        super(Pseudo_inputs_generator, self).__init__()
+        self.number_of_channels = number_of_channels
+        self.number_of_points = number_of_points
+        self.pseudo_inputs_num = pseudo_inputs_num
+        self.first_layer = nn.Linear(pseudo_inputs_num, pseudo_inputs_num)
+        self.relu = nn.ReLU()
+        self.second_layer = nn.Linear(
+            pseudo_inputs_num, number_of_channels * number_of_points
+        )
+
+    def forward(self) -> torch.Tensor:
+        x = torch.eye(self.pseudo_inputs_num, self.pseudo_inputs_num).to(
+            next(self.parameters()).device
+        )
+        pseudo_inputs = self.first_layer(x)
+        pseudo_inputs = self.relu(pseudo_inputs)
+        pseudo_inputs = self.second_layer(pseudo_inputs)
+        return pseudo_inputs.view(
+            -1, self.number_of_channels, self.number_of_points
+        )
+
+
+# Model
+class VAE_TCN_Vamp(nn.Module):
     def __init__(
         self,
         in_channels: int,
@@ -335,8 +371,9 @@ class VAE_TCN(nn.Module):
         avgpoolnum: int,
         upsamplenum: int,
         seq_len: int = 200,
+        pseudo_input_num: int = 800,
     ):
-        super(VAE_TCN, self).__init__()
+        super(VAE_TCN_Vamp, self).__init__()
         self.encoder = TCN_encoder(
             in_channels,
             out_channels,
@@ -361,6 +398,9 @@ class VAE_TCN(nn.Module):
             upsamplenum,
             seq_len,
         )
+        self.pseudo_inputs_layer = Pseudo_inputs_generator(
+            in_channels, seq_len, pseudo_input_num
+        )
         self.seq_len = seq_len
         self.trained = False
         self.in_channels = in_channels
@@ -368,6 +408,11 @@ class VAE_TCN(nn.Module):
 
     def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         mu, log_var = self.encoder(x)
+        return mu, log_var
+
+    def pseudo_inputs_latent(self) -> tuple[torch.Tensor, torch.Tensor]:
+        pseudo_inputs = self.pseudo_inputs_layer.forward()
+        mu, log_var = self.encode(pseudo_inputs)
         return mu, log_var
 
     def reparametrize(
@@ -378,17 +423,25 @@ class VAE_TCN(nn.Module):
         return mu + eps * std
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
-        x, log_std = self.decoder(z)
-        return x, log_std
+        x = self.decoder(z)
+        return x
 
     def forward(
         self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent()
         x = x.permute(0, 2, 1)  # 500 3 200
         mu, log_var = self.encode(x)
-        z = self.reparametrize(mu, log_var)
-        x_reconstructed, log_std = self.decode(z)
-        return x_reconstructed, mu, log_var, z, log_std
+        z = self.reparametrize(mu, log_var).to(next(self.parameters()).device)
+        x_reconstructed = self.decode(z)
+        return x_reconstructed, z, mu, log_var, mu_pseudo, log_var_pseudo
 
     def fit(
         self,
@@ -408,68 +461,57 @@ class VAE_TCN(nn.Module):
             total_loss = 0.0
             kl_div = 0.0
             total_mse = 0.0
-            total_manual_recons = 0.0
-            kl_2 = 0.0
             for x_batch in dataloader_train:
                 self.train()
                 x_batch = x_batch[0].to(next(self.parameters()).device)
-                x_recon, mu, log_var, z, _ = self(x_batch)
-                # print(self.log_std)
-                loss = vae_loss(
+                x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
+                    x_batch
+                )
+                loss = VAE_vamp_prior_loss(
                     x_batch.permute(0, 2, 1),
                     x_recon,
+                    z,
                     mu,
                     log_var,
+                    pseudo_mu,
+                    pseudo_log_var,
                     scale=self.log_std,
                 )
-                # loss = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
-                kl = kl_loss(mu, log_var)
+                kl = vamp_prior_kl_loss(
+                    z, mu, log_var, pseudo_mu, pseudo_log_var
+                )
                 mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
                 cur_size = x_batch.size(0)
-                total_mse += mse / cur_size
-                kl_2 += other_kl_loss(z, mu, log_var).mean()
-                kl_div += kl / cur_size
-                recons_true = (
-                    manul_recons(
-                        x_batch.permute(0, 2, 1), x_recon, self.log_std
-                    ).item()
-                    / cur_size
-                )
-                total_manual_recons += recons_true
-                # if (loss<0):
-                #     print(mu[0],log_var[0],self.log_std.item())
-                #     input("Press Enter to continue...")
-
+                total_mse += mse.item() / cur_size
+                kl_div += kl.mean().item()
             scheduler.step()
             # validation
-
             val_loss, val_kl, val_recons = self.compute_val_loss(
                 data_loader_val
             )
             total_loss = total_loss / len(dataloader_train)
             total_mse = total_mse / len(dataloader_train)
             kl_div = kl_div / len(dataloader_train)
-            kl_2 = kl_2 / len(dataloader_train)
             val_loss = val_loss / len(data_loader_val)
             val_kl = val_kl / len(data_loader_val)
             val_recons = val_recons / len(data_loader_val)
             if epoch % 10 == 0:
                 print(
-                    f"Epoch [{epoch + 1}/{epochs}]\n Train set, Loss: {total_loss:.4f},MSE: {total_mse:.4f}, KL: {kl_div:.4f}, Log_like: {total_loss - kl_div:.4f}, deviation {self.log_std.item():.4f}, true_kl = {kl_2:.4f}, manual_recons = {total_manual_recons:.4f} "
+                    f"Epoch [{epoch + 1}/{epochs}]\n Train set, Loss: {total_loss:.4f},MSE: {total_mse:.4f}, KL: {kl_div:.4f}, Log_like: {total_loss - kl_div:.4f},scale: {self.log_std.item():.4f} "
                 )
                 print(
-                    f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f} "
+                    f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f},scale: {self.log_std.item():.4f} "
                 )
             if epoch == epochs - 1:
                 print(
                     f"Epoch [{epoch + 1}/{epochs}]\n Train set, Loss: {total_loss:.4f},MSE: {total_mse:.4f}, KL: {kl_div:.4f}, Log_like: {total_loss - kl_div:.4f} "
                 )
                 print(
-                    f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f} "
+                    f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f} "
                 )
 
         self.trained = True
@@ -489,24 +531,31 @@ class VAE_TCN(nn.Module):
         self.eval()
         for x_batch in val_data:
             x_batch = x_batch[0].to(next(self.parameters()).device)
-            x_recon, mu, log_var, _, _ = self(x_batch)
-            loss = vae_loss(
-                x_batch.permute(0, 2, 1), x_recon, mu, log_var, self.log_std
+            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(x_batch)
+            loss = VAE_vamp_prior_loss(
+                x_batch.permute(0, 2, 1),
+                x_recon,
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                scale=self.log_std,
             )
             total_loss += loss.item()
-            kl = kl_loss(mu, log_var)
+            kl = vamp_prior_kl_loss(z, mu, log_var, pseudo_mu, pseudo_log_var)
             mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
             cur_size = x_batch.size(0)
             total_mse += mse.item() / cur_size
-            kl_div += kl / cur_size
+            kl_div += kl.mean().item()
         return total_loss, kl_div, total_mse
 
     def reproduce_data(
         self, data: np.ndarray, batch_size: int, n_batch: int
-    ) -> tuple[torch.Tensor, DataLoader]:
+    ) -> torch.Tensor:
         if not self.trained:
             raise Exception("Model not trained yet")
-        data1, _ = get_data_loader(data, batch_size, train_split=0.8)
+        data1, _ = get_data_loader(data, batch_size, 0.8)
         i = 0
         batches_reconstructed = []
         for batch in data1:
@@ -518,14 +567,17 @@ class VAE_TCN(nn.Module):
             batches_reconstructed.append(x_recon)
             i += 1
         reproduced_data = torch.cat(batches_reconstructed, dim=0)
-        # print(reproduced_data)
+        return reproduced_data
 
-        return reproduced_data, data1
+    def sample_from_prior(self, num_sample: int = 1) -> torch.Tensor:
+        # getting the prior
+        with torch.no_grad():
+            mu, log_var = self.pseudo_inputs_latent()
+        distrib = create_mixture(mu, log_var)
+        samples = distrib.sample((num_sample,))
+        return samples
 
-    def sample_from_prior(self, num_samples: int = 1) -> torch.Tensor:
-        return torch.randn(num_samples, self.encoder.mu_layer.out_features)
-
-    def sample(self, num_samples: int, batch_size: int = 500) -> torch.Tensor:
+    def sample(self, num_samples: int, batch_size: int) -> torch.Tensor:
         self.eval()
         device = next(self.parameters()).device
         samples = []
