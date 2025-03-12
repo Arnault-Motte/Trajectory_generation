@@ -74,10 +74,10 @@ def main()->int:
     traffic_f = data_cleaner.output_converter(x_recon)
     displayer.plot_compare_traffic(traffic_init, traffic_f,plot_path="data_orly/figures/VAE_TCN_vamp_Recons.png")  # noqa: E501
     traffic_f.data.to_pickle('data_orly/generated_traff/reproducted/VAE_TCN_Vamp_reproducted_traff.pkl')
-    print(data_cleaner.first_n_flight_delta_time(traffic_f))
+    #print(data_cleaner.first_n_flight_delta_time(traffic_f))
     model.save_model("data_orly/src/generation/models/saved_weights/VAE_TCN_Vampprior.pth")
 
-    #displayer.plot_latent_space(2000,model,'data_orly/figures/VAE_TCN_vamp_Latent_space.png')
+    displayer.plot_latent_space(2000,model,'data_orly/figures/VAE_TCN_vamp_Latent_space.png')
     return 0
 
 
