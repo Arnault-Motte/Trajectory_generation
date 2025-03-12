@@ -7,6 +7,8 @@ from torch.nn.utils import weight_norm
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
+from data_orly.src.core.early_stop import Early_stopping
+
 import numpy as np
 
 
@@ -47,7 +49,7 @@ def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
 
 
 def create_mixture(
-    mu: torch.Tensor, log_var: torch.Tensor
+    mu: torch.Tensor, log_var: torch.Tensor, vamp_weight: torch.Tensor
 ) -> distrib.MixtureSameFamily:
     n_components = mu.size(0)
     if torch.isnan(mu).any():
@@ -55,9 +57,7 @@ def create_mixture(
     if torch.isnan(log_var).any():
         print("NaN detected in log_var")
     dist = distrib.MixtureSameFamily(
-        distrib.Categorical(
-            logits=torch.ones((n_components), device=mu.device)
-        ),
+        distrib.Categorical(logits=vamp_weight),
         component_distribution=distrib.Independent(
             distrib.Normal(mu, (log_var / 2).exp()), 1
         ),
@@ -77,8 +77,9 @@ def vamp_prior_kl_loss(
     log_var: torch.Tensor,
     pseudo_mu: torch.Tensor,
     pseudo_log_var: torch.Tensor,
+    vamp_weight: torch.Tensor,
 ) -> torch.Tensor:
-    prior = create_mixture(pseudo_mu, pseudo_log_var)
+    prior = create_mixture(pseudo_mu, pseudo_log_var, vamp_weight)
     posterior = create_distrib_posterior(mu, log_var)
     log_prior = prior.log_prob(z)
     log_posterior = posterior.log_prob(z)
@@ -95,12 +96,15 @@ def VAE_vamp_prior_loss(
     pseudo_mu: torch.Tensor,
     pseudo_log_var: torch.Tensor,
     scale: torch.Tensor = None,
+    vamp_weight: torch.Tensor = None,
     beta: float = 1,
 ) -> torch.Tensor:
     recon_loss = negative_log_likehood(x, x_recon, scale)
     # Compute KL divergence
     batch_size = x.size(0)
-    kl_loss = vamp_prior_kl_loss(z, mu, logvar, pseudo_mu, pseudo_log_var)
+    kl_loss = vamp_prior_kl_loss(
+        z, mu, logvar, pseudo_mu, pseudo_log_var, vamp_weight
+    )
     return recon_loss.mean() + beta * kl_loss.mean()
 
 
@@ -333,6 +337,7 @@ class Pseudo_inputs_generator(nn.Module):
         number_of_channels: int,
         number_of_points: int,
         pseudo_inputs_num: int,
+        dropout: float,
     ) -> None:
         super(Pseudo_inputs_generator, self).__init__()
         self.number_of_channels = number_of_channels
@@ -343,6 +348,7 @@ class Pseudo_inputs_generator(nn.Module):
         self.second_layer = nn.Linear(
             pseudo_inputs_num, number_of_channels * number_of_points
         )
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self) -> torch.Tensor:
         x = torch.eye(self.pseudo_inputs_num, self.pseudo_inputs_num).to(
@@ -350,7 +356,9 @@ class Pseudo_inputs_generator(nn.Module):
         )
         pseudo_inputs = self.first_layer(x)
         pseudo_inputs = self.relu(pseudo_inputs)
+        pseudo_inputs = self.dropout(pseudo_inputs)
         pseudo_inputs = self.second_layer(pseudo_inputs)
+        pseudo_inputs = self.dropout(pseudo_inputs)
         return pseudo_inputs.view(
             -1, self.number_of_channels, self.number_of_points
         )
@@ -372,6 +380,9 @@ class VAE_TCN_Vamp(nn.Module):
         upsamplenum: int,
         seq_len: int = 200,
         pseudo_input_num: int = 800,
+        early_stopping: bool = False,
+        patience: int = 100,
+        min_delta: float = -100.0,
     ):
         super(VAE_TCN_Vamp, self).__init__()
         self.encoder = TCN_encoder(
@@ -399,12 +410,19 @@ class VAE_TCN_Vamp(nn.Module):
             seq_len,
         )
         self.pseudo_inputs_layer = Pseudo_inputs_generator(
-            in_channels, seq_len, pseudo_input_num
+            in_channels, seq_len, pseudo_input_num, dropout=dropout
         )
         self.seq_len = seq_len
         self.trained = False
         self.in_channels = in_channels
         self.log_std = nn.Parameter(torch.Tensor([1]), requires_grad=True)
+
+        self.prior_weights = nn.Parameter(
+            torch.ones((1, pseudo_input_num)), requires_grad=True
+        )
+        self.early_stopping = early_stopping
+        self.patience = patience
+        self.min_delta = min_delta
 
     def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         mu, log_var = self.encoder(x)
@@ -456,6 +474,11 @@ class VAE_TCN_Vamp(nn.Module):
         optimizer = optim.Adam(self.parameters(), lr=lr)
         dataloader_train, data_loader_val = get_data_loader(x, batch_size)
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
+        early_stopping = (
+            Early_stopping(patience=self.patience, min_delta=self.min_delta)
+            if self.early_stopping
+            else None
+        )
 
         for epoch in range(epochs):
             total_loss = 0.0
@@ -476,13 +499,19 @@ class VAE_TCN_Vamp(nn.Module):
                     pseudo_mu,
                     pseudo_log_var,
                     scale=self.log_std,
+                    vamp_weight=self.prior_weights,
                 )
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
                 kl = vamp_prior_kl_loss(
-                    z, mu, log_var, pseudo_mu, pseudo_log_var
+                    z,
+                    mu,
+                    log_var,
+                    pseudo_mu,
+                    pseudo_log_var,
+                    vamp_weight=self.prior_weights,
                 )
                 mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
                 cur_size = x_batch.size(0)
@@ -493,6 +522,7 @@ class VAE_TCN_Vamp(nn.Module):
             val_loss, val_kl, val_recons = self.compute_val_loss(
                 data_loader_val
             )
+
             total_loss = total_loss / len(dataloader_train)
             total_mse = total_mse / len(dataloader_train)
             kl_div = kl_div / len(dataloader_train)
@@ -514,6 +544,23 @@ class VAE_TCN_Vamp(nn.Module):
                     f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f} "
                 )
 
+            if self.early_stopping:
+                early_stopping(val_loss, self)
+                if early_stopping.stop:
+                    self.trained = True
+                    print(
+                        f"Epoch [{epoch + 1}/{epochs}]\n Train set, Loss: {total_loss:.4f},MSE: {total_mse:.4f}, KL: {kl_div:.4f}, Log_like: {total_loss - kl_div:.4f} "
+                    )
+                    print(
+                        f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f} "
+                    )
+                    print(
+                        f"Best model loss: {early_stopping.min_loss} \n |--Loading best model--|"
+                    )
+                    self.load_model(early_stopping.path)
+                    break
+        if self.early_stopping:
+            self.load_model(early_stopping.path)
         self.trained = True
 
     def reproduce(self, x: torch.Tensor) -> torch.Tensor:
@@ -541,9 +588,17 @@ class VAE_TCN_Vamp(nn.Module):
                 pseudo_mu,
                 pseudo_log_var,
                 scale=self.log_std,
+                vamp_weight=self.prior_weights,
             )
             total_loss += loss.item()
-            kl = vamp_prior_kl_loss(z, mu, log_var, pseudo_mu, pseudo_log_var)
+            kl = vamp_prior_kl_loss(
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                vamp_weight=self.prior_weights,
+            )
             mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
             cur_size = x_batch.size(0)
             total_mse += mse.item() / cur_size
@@ -567,7 +622,7 @@ class VAE_TCN_Vamp(nn.Module):
             batches_reconstructed.append(x_recon)
             i += 1
         reproduced_data = torch.cat(batches_reconstructed, dim=0)
-        return reproduced_data
+        return reproduced_data, data1
 
     def sample_from_prior(self, num_sample: int = 1) -> torch.Tensor:
         # getting the prior

@@ -23,8 +23,9 @@ def main()->int:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     ## Getting the data
-    displayer = Displayer()
+
     data_cleaner = Data_cleaner("data_orly/data/landings_LFPO_06.pkl")
+    displayer = Displayer(data_cleaner)
     data = data_cleaner.clean_data()
     ##Getting the model
     seq_len = 200
@@ -36,8 +37,10 @@ def main()->int:
     number_of_block = 4
     kernel_size = 16
     dilatation = 2
-    dropout = 0
+    dropout = 0.2
     pseudo_input_num = 800
+    patience = 30
+    min_delta = -100
     print(in_channels)
 
     model = VAE_TCN_Vamp(
@@ -52,7 +55,10 @@ def main()->int:
         pooling_factor,
         pooling_factor,
         seq_len,
-        pseudo_input_num=pseudo_input_num
+        pseudo_input_num=pseudo_input_num,
+        early_stopping= True,
+        patience=patience,
+        min_delta=min_delta,
     ).to(device)
 
     ## Training the model
@@ -70,6 +76,8 @@ def main()->int:
     traffic_f.data.to_pickle('data_orly/generated_traff/reproducted/VAE_TCN_Vamp_reproducted_traff.pkl')
     print(data_cleaner.first_n_flight_delta_time(traffic_f))
     model.save_model("data_orly/src/generation/models/saved_weights/VAE_TCN_Vampprior.pth")
+
+    #displayer.plot_latent_space(2000,model,'data_orly/figures/VAE_TCN_vamp_Latent_space.png')
     return 0
 
 
