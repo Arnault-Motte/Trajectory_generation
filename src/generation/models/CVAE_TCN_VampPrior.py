@@ -710,10 +710,10 @@ class CVAE_TCN_Vamp(nn.Module):
                 x_batch, labels
             )
             prior_weights = (
-                    self.prior_weights_layers(labels)
-                    if self.prior_weights_layers
-                    else self.prior_weights
-                )
+                self.prior_weights_layers(labels)
+                if self.prior_weights_layers
+                else self.prior_weights
+            )
             loss = VAE_vamp_prior_loss(
                 x_batch.permute(0, 2, 1),
                 x_recon,
@@ -764,25 +764,33 @@ class CVAE_TCN_Vamp(nn.Module):
         reproduced_data = torch.cat(batches_reconstructed, dim=0)
         return reproduced_data, data1
 
-    def sample_from_prior(self, num_sample: int = 1) -> torch.Tensor:
+    def sample_from_prior(
+        self, num_sample: int = 1, labels: torch.Tensor = None
+    ) -> torch.Tensor:
         # getting the prior
         with torch.no_grad():
             mu, log_var = self.pseudo_inputs_latent()
+
         distrib = create_mixture(
             mu, log_var, vamp_weight=self.prior_weights.squeeze(0)
         )
         samples = distrib.sample((num_sample,))
         return samples
-    
-    def sample_from_conditioned_prior(self, num_sample: int = 1,label: torch.Tensor) -> torch.Tensor:
+
+    def sample_from_conditioned_prior(
+        self, num_sample: int = 1, label: torch.Tensor = None
+    ) -> torch.Tensor:
         # getting the prior
         with torch.no_grad():
             prior_weights = (
-                    self.prior_weights_layers(label)
-                    if self.prior_weights_layers
-                    else self.prior_weights
-                )
+                self.prior_weights_layers(label)
+                if self.prior_weights_layers
+                else self.prior_weights
+            )
+            print("prior_weight",prior_weights.shape)
+
             mu, log_var = self.pseudo_inputs_latent()
+            print("mu",mu.shape)
         distrib = create_mixture(
             mu, log_var, vamp_weight=prior_weights.squeeze(0)
         )
@@ -809,3 +817,38 @@ class CVAE_TCN_Vamp(nn.Module):
     def load_model(self, weight_file_path: str) -> None:
         self.load_state_dict(torch.load(weight_file_path))
         self.trained = True
+
+    def get_pseudo_inputs_recons(self) -> torch.Tensor:
+        with torch.no_grad():
+            pseudo_labels = self.pseudo_labels_layer.forward()
+            pseudo_inputs = self.pseudo_inputs_layer.forward().permute(0, 2, 1)
+            output = self.forward(pseudo_inputs, pseudo_labels)[0].permute(
+                0, 2, 1
+            )
+        return output
+
+    def generate_from_specific_vamp_prior(
+        self, vamp_index: int, num_traj: int
+    ) -> torch.Tensor:
+        with torch.no_grad():
+            psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
+            chosen_mean = psuedo_means[vamp_index]
+            chosen_scale = (pseudo_scales[vamp_index]/ 2).exp()
+            labels = self.pseudo_labels_layer()[vamp_index]
+            print(chosen_mean.shape)
+            print(chosen_scale.shape)
+            print(labels.shape)
+
+            dist = distrib.Independent(
+                distrib.Normal(chosen_mean, chosen_scale), 1
+            )
+            sample = dist.sample(torch.Size([num_traj])).to(
+                next(self.parameters()).device
+            )
+            labels = labels.repeat(num_traj,1)
+            
+            print(labels.shape)
+            print(sample.shape)
+            generated_traj = self.decode(sample,labels)
+
+        return generated_traj.permute(0, 2, 1)

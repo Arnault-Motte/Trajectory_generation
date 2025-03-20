@@ -12,13 +12,20 @@ from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
 
+# def traffic_random_merge(self,file_names : list[str]) -> None:
+#     traffics = [Traffic.from_file(file_name).aircraft_data() for file_name in file_names]
+#     max_traffic_size = max()
+
 class Data_cleaner:
     def __init__(
         self,
         file_name: str = "landings_LFPO_06.pkl",
         columns: list[str] = ["track", "altitude", "groundspeed", "timedelta"],
         seq_len: int = 200,
+        #file_names: list[str]= None,
     ):
+        # if not file_name and not file_name:
+        #     raise  ValueError("file_name and file_names are both None")
         self.basic_traffic_data = Traffic.from_file(file_name).aircraft_data()
         self.columns = columns
         self.scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -27,6 +34,8 @@ class Data_cleaner:
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
 
+
+    
     def dataloader_traffic_converter(
         self, data: DataLoader, num_epoch: int
     ) -> Traffic:

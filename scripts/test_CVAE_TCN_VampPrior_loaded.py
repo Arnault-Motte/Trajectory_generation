@@ -24,7 +24,7 @@ def main()->int:
     print(device)
     ## Getting the data
 
-    data_cleaner = Data_cleaner("data_orly/data/landings_LFPO_06.pkl")
+    data_cleaner = Data_cleaner("data_orly/data/takeoffs_LFPO_07.pkl")
     displayer = Displayer(data_cleaner)
     data = data_cleaner.clean_data()
     labels = data_cleaner.return_labels()
@@ -70,7 +70,7 @@ def main()->int:
     ).to(device)
 
     ## Training the model
-    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior.pth")
+    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7.pth")
 
 
     ## Testing reconstuction on one batch
@@ -85,7 +85,10 @@ def main()->int:
 
 
     #displayer.plot_latent_space_top10_labels(2000,model,'data_orly/figures/CVAE_TCN_vamp_Latent_space.png')
-    displayer.plot_distribution_typecode_label_generation("data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_1_Take_off_7.png","data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_2_Take_off_7.png",model,2000,True,(-2000,0))
+    #displayer.plot_distribution_typecode_label_generation("data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_1_Take_off_7.png","data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_2_Take_off_7.png",model,2000,True,(0,4000))
+    #displayer.display_pseudo_inputs(model,"data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7.png")
+    displayer.plot_vamp_generated(model,"data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7_chosen.png",1,100)
+
     return 0
 
 
