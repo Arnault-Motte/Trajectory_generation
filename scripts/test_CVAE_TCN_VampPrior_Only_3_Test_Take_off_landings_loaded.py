@@ -12,10 +12,6 @@ from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import *  # noqa: F403
 from data_orly.src.generation.test_display import Displayer
 
-# sys.path.append(
-#     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-# )
-
 
 def main() -> int:
     print(sys.path)
@@ -24,11 +20,14 @@ def main() -> int:
     ## Getting the data
 
     data_cleaner = Data_cleaner(
-        "data_orly/data/takeoffs_LFPO_07.pkl",
+        file_names=[
+            "data_orly/data/takeoffs_LFPO_07.pkl",
+            "data_orly/data/landings_LFPO_06.pkl",
+        ]
     )
     displayer = Displayer(data_cleaner)
     data = data_cleaner.clean_data()
-    labels = data_cleaner.return_labels()
+    labels = data_cleaner.return_labels_datasets()
     print(labels, labels.shape)
     labels_dim = labels.shape[1]
 
@@ -46,7 +45,7 @@ def main() -> int:
     pseudo_input_num = 800
     patience = 30
     min_delta = -100
-    labels_latent = 16
+    labels_latent = 4
     print(in_channels)
 
     model = CVAE_TCN_Vamp(
@@ -67,31 +66,31 @@ def main() -> int:
         early_stopping=True,
         patience=patience,
         min_delta=min_delta,
+        temp_save="best_model_2.pth",
     ).to(device)
 
     ## Training the model
-    model.load_model(
-        "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_test_vert_rate_direct.pth"
-    )
+    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_and_landings.pth")
+
 
     ## Testing reconstuction on one batch
 
-    # x_recon,data_2 =  model.reproduce_data(data,labels, 500, 2)
-    # print(x_recon.shape, "\n")
-    # traffic_init = data_cleaner.dataloader_traffic_converter(data_2,2)
+    x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
+    print(x_recon.shape, "\n")
+    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
+    ordered_labels = [li for _, label in data_2 for li in label.tolist()]
+    ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
+    print(ordered_labels)
 
-    # traffic_f = data_cleaner.output_converter(x_recon)
-    # displayer.plot_compare_traffic(traffic_init, traffic_f,plot_path="data_orly/figures/CVAE_TCN_vamp_Recons.png")  # noqa: E501
-    # traffic_f.data.to_pickle('data_orly/src/generation/models/saved_temp/CVAE_TCN_Vampprior_take_off_7.pth')
-
-    # displayer.plot_latent_space_top10_labels(2000,model,'data_orly/figures/CVAE_TCN_vamp_Latent_space.png')
-    # displayer.plot_distribution_typecode_label_generation("data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_1_Take_off_7.png","data_orly/figures/CVAE_TCN_vamp_sampled_vr_dist_2_Take_off_7.png",model,2000,True,(0,4000))
-    # displayer.display_pseudo_inputs(model,"data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7.png")
-    displayer.plot_vamp_generated(
-        model,
-        "data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7_chosen.png",
-        1,
-        100,
+    traffic_f = data_cleaner.output_converter(x_recon)
+    displayer.plot_compare_traffic_hue(
+        traffic_init,
+        generated_traffic=traffic_f,
+        labels_hue= ordered_labels,
+        plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing.png",
+    )
+    traffic_f.data.to_pickle(
+        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_and landings.pkl"
     )
 
     return 0

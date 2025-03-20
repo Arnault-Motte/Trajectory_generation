@@ -60,6 +60,9 @@ def create_mixture(
         print("NaN detected in mu")
     if torch.isnan(log_var).any():
         print("NaN detected in log_var")
+
+    # print("w ", vamp_weight.shape)
+    # print("mu ", mu.shape)
     dist = distrib.MixtureSameFamily(
         distrib.Categorical(logits=vamp_weight),
         component_distribution=distrib.Independent(
@@ -453,9 +456,11 @@ class CVAE_TCN_Vamp(nn.Module):
         min_delta: float = -100.0,
         num_classes: int = None,
         conditioned_prior: bool = False,
+        temp_save: str = "best_model.pth",
     ):
         super(CVAE_TCN_Vamp, self).__init__()
 
+        self.temp_save = temp_save
         self.labels_encoder_broadcast = Label_mapping(
             num_classes is None,
             label_dim,
@@ -591,7 +596,12 @@ class CVAE_TCN_Vamp(nn.Module):
         )
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
         early_stopping = (
-            Early_stopping(patience=self.patience, min_delta=self.min_delta)
+            Early_stopping(
+                patience=self.patience,
+                min_delta=self.min_delta,
+                best_model_path="data_orly/src/generation/models/saved_temp/"
+                + self.temp_save,
+            )
             if self.early_stopping
             else None
         )
@@ -746,7 +756,7 @@ class CVAE_TCN_Vamp(nn.Module):
         labels: np.ndarray,
         batch_size: int,
         n_batch: int,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, DataLoader]:
         if not self.trained:
             raise Exception("Model not trained yet")
         data1, _ = get_data_loader(data, labels, batch_size, 0.8)
@@ -787,10 +797,11 @@ class CVAE_TCN_Vamp(nn.Module):
                 if self.prior_weights_layers
                 else self.prior_weights
             )
-            print("prior_weight",prior_weights.shape)
-
+            print("prior_weight", prior_weights.shape)
+            print("sizes = ", )
             mu, log_var = self.pseudo_inputs_latent()
-            print("mu",mu.shape)
+            print("mu", mu.shape)
+            print("log_var ", log_var.shape)
         distrib = create_mixture(
             mu, log_var, vamp_weight=prior_weights.squeeze(0)
         )
@@ -804,8 +815,12 @@ class CVAE_TCN_Vamp(nn.Module):
         device = next(self.parameters()).device
         samples = []
         for _ in range(0, num_samples, batch_size):
+            print("sizes fun : ", labels.shape, batch_size)
             current_batch_size = min(batch_size, num_samples - len(samples))
-            z = self.sample_from_prior(current_batch_size).to(device)
+            z = self.sample_from_conditioned_prior(
+                current_batch_size, labels[0]
+            ).to(device)
+
             generated_data = self.decode(z, labels)
             samples.append(generated_data)
         final_samples = torch.cat(samples)
@@ -833,7 +848,7 @@ class CVAE_TCN_Vamp(nn.Module):
         with torch.no_grad():
             psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
             chosen_mean = psuedo_means[vamp_index]
-            chosen_scale = (pseudo_scales[vamp_index]/ 2).exp()
+            chosen_scale = (pseudo_scales[vamp_index] / 2).exp()
             labels = self.pseudo_labels_layer()[vamp_index]
             print(chosen_mean.shape)
             print(chosen_scale.shape)
@@ -845,10 +860,10 @@ class CVAE_TCN_Vamp(nn.Module):
             sample = dist.sample(torch.Size([num_traj])).to(
                 next(self.parameters()).device
             )
-            labels = labels.repeat(num_traj,1)
-            
+            labels = labels.repeat(num_traj, 1)
+
             print(labels.shape)
             print(sample.shape)
-            generated_traj = self.decode(sample,labels)
+            generated_traj = self.decode(sample, labels)
 
         return generated_traj.permute(0, 2, 1)

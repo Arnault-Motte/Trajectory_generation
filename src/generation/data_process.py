@@ -12,21 +12,44 @@ from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
 
-# def traffic_random_merge(self,file_names : list[str]) -> None:
-#     traffics = [Traffic.from_file(file_name).aircraft_data() for file_name in file_names]
-#     max_traffic_size = max()
+def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
+    traffics = [
+        Traffic.from_file(file_name).aircraft_data() for file_name in file_names
+    ]
+    max_traffic_size = max([len(traf) for traf in traffics])
+    num_to_draw = (
+        max_traffic_size if total else max_traffic_size // len(traffics)
+    )  # number of traffic to sample to have a balanced dataset (that is not to big)
+
+    sampled_traffic = sum([traf.sample(n=num_to_draw) for traf in traffics])
+    print("Size of custom traffic : ",len(sampled_traffic))
+    return sampled_traffic
+
 
 class Data_cleaner:
     def __init__(
         self,
-        file_name: str = "landings_LFPO_06.pkl",
+        file_name: str = None,
         columns: list[str] = ["track", "altitude", "groundspeed", "timedelta"],
         seq_len: int = 200,
-        #file_names: list[str]= None,
+        file_names: list[str] = [],
+        airplane_types_num: int = -1,
+        total : bool = False,
     ):
-        # if not file_name and not file_name:
-        #     raise  ValueError("file_name and file_names are both None")
-        self.basic_traffic_data = Traffic.from_file(file_name).aircraft_data()
+        if len(file_names) == 0 and not file_name:
+            raise ValueError("file_name and file_names are both None")
+        self.basic_traffic_data = (
+            Traffic.from_file(file_name).aircraft_data()
+            if file_name
+            else traffic_random_merge(file_names,total)
+        )
+        self.file_names = file_names
+        self.total = total
+        if airplane_types_num != -1:
+            self.airplane_types_num = airplane_types_num
+            self.basic_traffic_data = self.traffic_only_top_n(
+                airplane_types_num, self.basic_traffic_data
+            )
         self.columns = columns
         self.scaler = MinMaxScaler(feature_range=(-1, 1))
         self.n_traj = len(self.basic_traffic_data)
@@ -34,8 +57,22 @@ class Data_cleaner:
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
 
+    def traffic_only_top_n(self, top_num: int, tra: Traffic) -> Traffic:
+        top_10 = self.get_top_10_planes()
+        bound = min(top_num, len(top_10))
+        top_n = top_10[:bound]
+        top_n_typecodes = [keys for keys, _ in top_n]
 
-    
+        def simple(flight: Flight) -> Flight:
+            return flight.assign(
+                simple=lambda _: flight.typecode in top_n_typecodes
+            )
+
+        temp_traf = tra.iterate_lazy().pipe(simple).eval(desc="")
+        final_traf = temp_traf.query("simple")
+        print("Final traffic size : ", len(final_traf))
+        return final_traf
+
     def dataloader_traffic_converter(
         self, data: DataLoader, num_epoch: int
     ) -> Traffic:
@@ -142,6 +179,19 @@ class Data_cleaner:
         return self.one_hot.fit_transform(labels)
         # return np.array([flight.typecode for flight in self.basic_traffic_data])
 
+
+    def return_labels_datasets(self) -> np.ndarray:
+        """
+        Returns labels that represents the dataset of origin of the data
+        """
+        data_set_len = len(self.basic_traffic_data)
+        number_of_files = len(self.file_names)
+        fligh_per_dataset = data_set_len//number_of_files
+        labels = [f"d{i//fligh_per_dataset}" for i in range(data_set_len)]
+        labels_array = np.array(labels).reshape(-1,1)
+        return self.one_hot.fit_transform(labels_array)
+
+
     ### Function to get the mean end point of the trajectories
     def get_mean_end_point(self) -> tuple:
         total_lat = 0
@@ -244,14 +294,17 @@ def filter_smoothness(
     t_to = t_to.query("simple")
     return t_to
 
-def compute_vertical_rate_flight(flight : Flight) -> Flight:
-        data = flight.data
-        delta_time = data["timedelta"].diff()
-        delta_altitude = data["altitude"].diff()
-        data["vertical_rate"] = delta_altitude / delta_time *60
-        data.loc[data.index[0], "vertical_rate"] = data["vertical_rate"].iloc[1]
-        return Flight(data)
+
+def compute_vertical_rate_flight(flight: Flight) -> Flight:
+    data = flight.data
+    delta_time = data["timedelta"].diff()
+    delta_altitude = data["altitude"].diff()
+    data["vertical_rate"] = delta_altitude / delta_time * 60
+    data.loc[data.index[0], "vertical_rate"] = data["vertical_rate"].iloc[1]
+    return Flight(data)
 
 
 def compute_vertical_rate(traffic: Traffic) -> Traffic:
-    return traffic.iterate_lazy().pipe(compute_vertical_rate_flight).eval()  
+    if ("vertical_rate" in traffic.data.columns):
+        return traffic
+    return traffic.iterate_lazy().pipe(compute_vertical_rate_flight).eval()

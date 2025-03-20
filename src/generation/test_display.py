@@ -515,7 +515,9 @@ class Displayer:
             list_all_points.append(total)
         print(list_all_points[0].shape)
         all_size = [elem.shape[0] for elem in list_all_points]
-        total_fit = np.concat([tot[: tot.shape[0] // 2] for tot in list_all_points ], axis=0)
+        total_fit = np.concat(
+            [tot[: tot.shape[0] // 2] for tot in list_all_points], axis=0
+        )
         all_total = np.concat(list_all_points, axis=0)
         print(all_total.shape)
 
@@ -527,18 +529,18 @@ class Displayer:
             total_size = 0
             cmap = plt.get_cmap("tab10")
             for i, current_size in enumerate(all_size):
-                #some  specifc shape
-                color = cmap(i%10)
+                # some  specifc shape
+                color = cmap(i % 10)
                 ax.scatter(
                     embeded[total_size : total_size + current_size // 2, 0],
                     embeded[total_size : total_size + current_size // 2, 1],
                     s=4,
                     c=[color],
-                    marker='o',
+                    marker="o",
                     label="True" if i == 0 else None,
                     alpha=0.7,
                 )
-                #another shape
+                # another shape
                 ax.scatter(
                     embeded[
                         total_size + current_size // 2 : total_size
@@ -552,7 +554,7 @@ class Displayer:
                     ],
                     s=4,
                     c=[color],
-                    marker='s',
+                    marker="s",
                     label="Generated" if i == 0 else None,
                     alpha=0.4,
                 )
@@ -563,3 +565,105 @@ class Displayer:
             plt.savefig(plt_path)
 
         return 0
+
+
+
+    def plot_compare_traffic_hue(
+        self,
+        traffic: Traffic,
+        generated_traffic: Traffic,
+        labels_hue: np.ndarray,
+        n_trajectories: int = None,
+        background: bool = True,
+        plot_path: str = "data_orly/plot.png",
+    ) -> int:
+        if not n_trajectories:
+            n_trajectories = len(generated_traffic)
+
+        if background:
+            # background elements
+            paris_area = france.data.query("ID_1 == 1000")
+            seine_river = Nominatim.search(
+                "Seine river, France"
+            ).shape.intersection(paris_area.union_all().buffer(0.1))
+        labels_hue = labels_hue.flatten()
+        unique_labels = np.unique(labels_hue)
+        cmap = plt.get_cmap("tab10")
+        colors = [cmap(i) for i in range(len(unique_labels))]
+        label_to_color = {
+            lab: colors[i % len(unique_labels)] for i, lab in enumerate(unique_labels)
+        }
+
+        with plt.style.context("traffic"):
+            fig, ax = plt.subplots(
+                1, 2, subplot_kw=dict(projection=Lambert93())
+            )
+
+            for i, flight in enumerate(traffic[: min(n_trajectories, len(traffic))]):
+                lab = labels_hue[i]  # assuming the labels_hue order corresponds to traffic order
+                color = label_to_color[lab]
+                flight.plot(ax[0], color=color, alpha=0.7)
+
+            for i, flight in enumerate(generated_traffic[: min(n_trajectories, len(generated_traffic))]):
+                lab = labels_hue[i]
+                color = label_to_color[lab]
+                flight.plot(ax[1], color=color, alpha=0.7)
+
+            import matplotlib.lines as mlines
+            handles = [
+                mlines.Line2D([], [], color=label_to_color[lab], marker="o", linestyle="", label=str(lab))
+                for lab in unique_labels
+            ]
+            ax[0].legend(handles=handles, title="Labels")
+            ax[1].legend(handles=handles, title="Labels")
+
+            plt.savefig(plot_path)
+        return 1
+    
+    def plot_generated_traff_hue_datasets(
+        self,
+        labels: list[str],
+        generated_traffic: Traffic,
+        labels_hue: np.ndarray,
+        n_trajectories: int = None,
+        background: bool = True,
+        plot_path: str = "data_orly/plot.png",
+    ) -> int:
+        if not n_trajectories:
+            n_trajectories = len(generated_traffic)
+
+        if background:
+            # background elements
+            paris_area = france.data.query("ID_1 == 1000")
+            seine_river = Nominatim.search(
+                "Seine river, France"
+            ).shape.intersection(paris_area.union_all().buffer(0.1))
+
+        unique_labels = np.unique(labels)
+        cmap = plt.get_cmap(f"tab{len(unique_labels)}")
+        label_to_color = {
+            lab: cmap(i % 10) for i, lab in enumerate(unique_labels)
+        }
+
+        with plt.style.context("traffic"):
+            fig, ax = plt.subplots(
+                subplot_kw=dict(projection=Lambert93())
+            )
+
+
+
+            for i, flight in enumerate(generated_traffic[: min(n_trajectories, len(generated_traffic))]):
+                lab = labels_hue[i]
+                color = label_to_color[lab]
+                flight.plot(ax, color=color, alpha=0.7)
+
+            import matplotlib.lines as mlines
+            handles = [
+                mlines.Line2D([], [], color=label_to_color[lab], marker="o", linestyle="", label=str(lab))
+                for lab in unique_labels
+            ]
+            ax.legend(handles=handles, title="Labels")
+            plt.savefig(plot_path)
+        return 1
+    
+    
