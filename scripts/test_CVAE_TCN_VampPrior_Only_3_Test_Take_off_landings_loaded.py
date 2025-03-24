@@ -26,10 +26,27 @@ def main() -> int:
         ]
     )
     displayer = Displayer(data_cleaner)
-    data = data_cleaner.clean_data()
+    data = data_cleaner.clean_data_several_datasets()
     labels = data_cleaner.return_labels_datasets()
+    tanslated_label = data_cleaner.one_hot.inverse_transform(labels)
+    traff_list = data_cleaner.return_traff_per_dataset()
+    lfpo6 = traff_list[1]
+    lfpo7 = traff_list[0]
+    displayer.plot_compare_traffic(
+        lfpo6,
+        lfpo7,
+        plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing_cond_test_not_gen_compare.png",
+    )
+
+    # print(tanslated_label.shape)
     print(labels, labels.shape)
     labels_dim = labels.shape[1]
+    displayer.plot_compare_traffic_hue(
+        data_cleaner.basic_traffic_data,
+        generated_traffic=data_cleaner.basic_traffic_data,
+        labels_hue= tanslated_label,
+        plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing_cond_test_not_gen.png",
+    )
 
     ##Getting the model
     seq_len = 200
@@ -67,10 +84,11 @@ def main() -> int:
         patience=patience,
         min_delta=min_delta,
         temp_save="best_model_2.pth",
+        conditioned_prior=True,
     ).to(device)
 
     ## Training the model
-    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_and_landings.pth")
+    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_and_landings_cond.pth")
 
 
     ## Testing reconstuction on one batch
@@ -81,16 +99,17 @@ def main() -> int:
     ordered_labels = [li for _, label in data_2 for li in label.tolist()]
     ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
     print(ordered_labels)
+    print([label for _, label in data_2 ])
 
     traffic_f = data_cleaner.output_converter(x_recon)
     displayer.plot_compare_traffic_hue(
         traffic_init,
         generated_traffic=traffic_f,
         labels_hue= ordered_labels,
-        plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing.png",
+        plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing_cond.png",
     )
     traffic_f.data.to_pickle(
-        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_and landings.pkl"
+        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_and landings_cond.pkl"
     )
 
     return 0

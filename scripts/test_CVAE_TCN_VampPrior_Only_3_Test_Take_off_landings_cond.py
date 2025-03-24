@@ -15,7 +15,7 @@ from data_orly.src.generation.test_display import Displayer
 
 def main() -> int:
     print(sys.path)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     ## Getting the data
 
@@ -26,7 +26,7 @@ def main() -> int:
         ]
     )
     displayer = Displayer(data_cleaner)
-    data = data_cleaner.clean_data()
+    data = data_cleaner.clean_data_several_datasets()
     labels = data_cleaner.return_labels_datasets()
     print(labels, labels.shape)
     labels_dim = labels.shape[1]
@@ -66,7 +66,7 @@ def main() -> int:
         early_stopping=True,
         patience=patience,
         min_delta=min_delta,
-        temp_save="best_model_2.pth",
+        temp_save="best_model_7.pth",
         conditioned_prior= True,
     ).to(device)
 

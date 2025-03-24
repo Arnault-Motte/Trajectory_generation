@@ -18,6 +18,7 @@ def get_data_loader(
     labels: np.ndarray,
     batch_size: int,
     train_split: float = 0.8,
+    shuffle: bool = True,
 ) -> tuple[DataLoader, DataLoader]:
     data2 = torch.tensor(data, dtype=torch.float32)
     labels_tensor = torch.tensor(labels, dtype=torch.float32)
@@ -25,8 +26,8 @@ def get_data_loader(
     train_size = int(train_split * len(dataset))
     test_size = len(dataset) - train_size
     train_data, val_data = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=shuffle)
+    test_loader = DataLoader(val_data, batch_size=batch_size, shuffle=shuffle)
     return train_loader, test_loader
 
 
@@ -759,7 +760,7 @@ class CVAE_TCN_Vamp(nn.Module):
     ) -> tuple[torch.Tensor, DataLoader]:
         if not self.trained:
             raise Exception("Model not trained yet")
-        data1, _ = get_data_loader(data, labels, batch_size, 0.8)
+        data1, _ = get_data_loader(data, labels, batch_size, 0.8, shuffle=False)
         i = 0
         batches_reconstructed = []
         for batch, labels_batch in data1:

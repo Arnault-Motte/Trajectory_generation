@@ -24,7 +24,7 @@ from data_orly.src.generation.models.VAE_TCN_VampPrior import (
     VAE_TCN_Vamp,
     get_data_loader,
 )
-from traffic.core import Traffic
+from traffic.core import Traffic, Flight
 
 ###TEST for seeing the reconstruction of the autoencoder
 
@@ -566,8 +566,6 @@ class Displayer:
 
         return 0
 
-
-
     def plot_compare_traffic_hue(
         self,
         traffic: Traffic,
@@ -587,31 +585,56 @@ class Displayer:
                 "Seine river, France"
             ).shape.intersection(paris_area.union_all().buffer(0.1))
         labels_hue = labels_hue.flatten()
+        print("flatten ", labels_hue)
         unique_labels = np.unique(labels_hue)
+        print("unique labels ", unique_labels)
         cmap = plt.get_cmap("tab10")
         colors = [cmap(i) for i in range(len(unique_labels))]
         label_to_color = {
-            lab: colors[i % len(unique_labels)] for i, lab in enumerate(unique_labels)
+            lab: colors[i % len(unique_labels)]
+            for i, lab in enumerate(unique_labels)
         }
+        print(label_to_color)
+        seq_len = self.data_clean.seq_len
+        flights_og_traffic = [
+            Flight(traffic.data.iloc[i * seq_len : (i + 1) * seq_len])
+            for i in range(min(len(traffic), n_trajectories))
+        ]
+        flights_gen_traffic = [
+            Flight(generated_traffic.data.iloc[i * seq_len : (i + 1) * seq_len])
+            for i in range(min(len(generated_traffic), n_trajectories))
+        ]
 
         with plt.style.context("traffic"):
             fig, ax = plt.subplots(
                 1, 2, subplot_kw=dict(projection=Lambert93())
             )
 
-            for i, flight in enumerate(traffic[: min(n_trajectories, len(traffic))]):
-                lab = labels_hue[i]  # assuming the labels_hue order corresponds to traffic order
+            for i, flight in enumerate(flights_og_traffic):
+                lab = labels_hue[
+                    i
+                ]  # assuming the labels_hue order corresponds to traffic order
                 color = label_to_color[lab]
                 flight.plot(ax[0], color=color, alpha=0.7)
 
-            for i, flight in enumerate(generated_traffic[: min(n_trajectories, len(generated_traffic))]):
+            for i, flight in enumerate(
+                flights_gen_traffic
+            ):
                 lab = labels_hue[i]
                 color = label_to_color[lab]
                 flight.plot(ax[1], color=color, alpha=0.7)
 
             import matplotlib.lines as mlines
+
             handles = [
-                mlines.Line2D([], [], color=label_to_color[lab], marker="o", linestyle="", label=str(lab))
+                mlines.Line2D(
+                    [],
+                    [],
+                    color=label_to_color[lab],
+                    marker="o",
+                    linestyle="",
+                    label=str(lab),
+                )
                 for lab in unique_labels
             ]
             ax[0].legend(handles=handles, title="Labels")
@@ -619,7 +642,7 @@ class Displayer:
 
             plt.savefig(plot_path)
         return 1
-    
+
     def plot_generated_traff_hue_datasets(
         self,
         labels: list[str],
@@ -646,24 +669,28 @@ class Displayer:
         }
 
         with plt.style.context("traffic"):
-            fig, ax = plt.subplots(
-                subplot_kw=dict(projection=Lambert93())
-            )
+            fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
 
-
-
-            for i, flight in enumerate(generated_traffic[: min(n_trajectories, len(generated_traffic))]):
+            for i, flight in enumerate(
+                generated_traffic[: min(n_trajectories, len(generated_traffic))]
+            ):
                 lab = labels_hue[i]
                 color = label_to_color[lab]
                 flight.plot(ax, color=color, alpha=0.7)
 
             import matplotlib.lines as mlines
+
             handles = [
-                mlines.Line2D([], [], color=label_to_color[lab], marker="o", linestyle="", label=str(lab))
+                mlines.Line2D(
+                    [],
+                    [],
+                    color=label_to_color[lab],
+                    marker="o",
+                    linestyle="",
+                    label=str(lab),
+                )
                 for lab in unique_labels
             ]
             ax.legend(handles=handles, title="Labels")
             plt.savefig(plot_path)
         return 1
-    
-    

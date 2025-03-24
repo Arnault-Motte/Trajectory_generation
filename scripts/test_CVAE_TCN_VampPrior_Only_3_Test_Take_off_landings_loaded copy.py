@@ -27,9 +27,8 @@ def main() -> int:
     )
     displayer = Displayer(data_cleaner)
     data = data_cleaner.clean_data_several_datasets()
-    #-----------------------------------------------------------------------------------------------
     labels = data_cleaner.return_labels_datasets()
-    #print(labels, labels.shape)
+    print(labels, labels.shape)
     labels_dim = labels.shape[1]
 
     ##Getting the model
@@ -71,10 +70,8 @@ def main() -> int:
     ).to(device)
 
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
-    model.save_model(
-        "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_and_landings.pth"
-    )
+    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_and_landings.pth")
+
 
     ## Testing reconstuction on one batch
 
@@ -83,7 +80,7 @@ def main() -> int:
     traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
     ordered_labels = [li for _, label in data_2 for li in label.tolist()]
     ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
-    print(ordered_labels)
+    #print(ordered_labels)
 
     traffic_f = data_cleaner.output_converter(x_recon)
     displayer.plot_compare_traffic_hue(

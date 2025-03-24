@@ -20,9 +20,12 @@ def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
     num_to_draw = (
         max_traffic_size if total else max_traffic_size // len(traffics)
     )  # number of traffic to sample to have a balanced dataset (that is not to big)
-
-    sampled_traffic = sum([traf.sample(n=num_to_draw) for traf in traffics])
-    print("Size of custom traffic : ",len(sampled_traffic))
+    print(num_to_draw)
+    print(max_traffic_size)
+    print(len(traffics))
+    lis_traf = [traf.sample(n=num_to_draw) for traf in traffics]
+    sampled_traffic = sum(lis_traf)
+    print("Size of custom traffic : ", len(sampled_traffic))
     return sampled_traffic
 
 
@@ -34,14 +37,14 @@ class Data_cleaner:
         seq_len: int = 200,
         file_names: list[str] = [],
         airplane_types_num: int = -1,
-        total : bool = False,
+        total: bool = False,
     ):
         if len(file_names) == 0 and not file_name:
             raise ValueError("file_name and file_names are both None")
         self.basic_traffic_data = (
             Traffic.from_file(file_name).aircraft_data()
             if file_name
-            else traffic_random_merge(file_names,total)
+            else traffic_random_merge(file_names, total)
         )
         self.file_names = file_names
         self.total = total
@@ -145,6 +148,39 @@ class Data_cleaner:
 
         return trajectories_scaled
 
+    def clean_data_several_datasets(self) -> np.ndarray:
+        flights_og_list = [
+            self.basic_traffic_data.data.iloc[
+                i * self.seq_len : (i + 1) * self.seq_len
+            ]
+            for i in range(len(self.basic_traffic_data))
+        ]
+        #checked
+
+        flights = []
+        for data in flights_og_list:
+            data = data[self.columns]
+            np_data = data.to_numpy()
+            flights.append(np_data)
+
+        trajectories = np.stack(flights).astype(np.float32)
+
+        # Store the original shape for later reconstruction
+        original_shape = (
+            trajectories.shape
+        )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
+
+        # Reshape to 2D for scaling: each row is an observation
+        trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
+
+        # Initialize and fit the scaler
+        trajectories_scaled = self.scaler.fit_transform(trajectories_reshaped)
+
+        # Reshape back to the original dimensions
+        trajectories_scaled = trajectories_scaled.reshape(original_shape)
+
+        return trajectories_scaled
+
     def clean_data_specific(self, data_to_clean) -> np.ndarray:
         flights = []
         for flight in data_to_clean:
@@ -179,18 +215,37 @@ class Data_cleaner:
         return self.one_hot.fit_transform(labels)
         # return np.array([flight.typecode for flight in self.basic_traffic_data])
 
-
     def return_labels_datasets(self) -> np.ndarray:
         """
         Returns labels that represents the dataset of origin of the data
         """
         data_set_len = len(self.basic_traffic_data)
         number_of_files = len(self.file_names)
-        fligh_per_dataset = data_set_len//number_of_files
-        labels = [f"d{i//fligh_per_dataset}" for i in range(data_set_len)]
-        labels_array = np.array(labels).reshape(-1,1)
+        fligh_per_dataset = data_set_len // number_of_files
+        print(fligh_per_dataset)
+
+        labels = [f"d{i // fligh_per_dataset}" for i in range(data_set_len)]
+        print(labels)
+        labels_array = np.array(labels).reshape(-1, 1)
         return self.one_hot.fit_transform(labels_array)
 
+    def return_traff_per_dataset(self) -> list[Traffic]:
+        data_set_len = len(self.basic_traffic_data)
+        number_of_files = len(self.file_names)
+        fligh_per_dataset = data_set_len // number_of_files
+        data = self.basic_traffic_data
+
+        traff_list = [
+            Traffic(
+                data.data.iloc[
+                    i * fligh_per_dataset * self.seq_len : (i + 1)
+                    * fligh_per_dataset
+                    * self.seq_len
+                ]
+            )
+            for i in range(number_of_files)
+        ]
+        return traff_list
 
     ### Function to get the mean end point of the trajectories
     def get_mean_end_point(self) -> tuple:
@@ -305,6 +360,6 @@ def compute_vertical_rate_flight(flight: Flight) -> Flight:
 
 
 def compute_vertical_rate(traffic: Traffic) -> Traffic:
-    if ("vertical_rate" in traffic.data.columns):
+    if "vertical_rate" in traffic.data.columns:
         return traffic
     return traffic.iterate_lazy().pipe(compute_vertical_rate_flight).eval()
