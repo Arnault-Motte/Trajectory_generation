@@ -86,10 +86,10 @@ def main()->int:
 
 
     #displayer.plot_latent_space_top10_labels(2000,model,'data_orly/figures/CVAE_TCN_vamp_Latent_space.png')
-    #displayer.plot_distribution_typecode_label_generation("data_orly/figures/vertical_rates/CVAE_TCN_vamp_Take_off_7_condi_n1.png","data_orly/figures/vertical_rates/CVAE_TCN_vamp_Take_off_7_condi_n2.png",model,2000,True,(0,4000))
+    displayer.plot_distribution_typecode_label_generation("data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Take_off_7_condi_n1.png","data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Take_off_7_condi_n2.png",model,2000,True,(0,4000))
     #displayer.display_pseudo_inputs(model,"data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7_condi.png")
     #displayer.plot_vamp_generated(model,"data_orly/figures/pseudo_inputs_traj/CVAE_TCN_vamp_TO_7_chosen_condi.png",1,100)
-    displayer.plot_latent_spaces_labels(model,"data_orly/figures/latent_spaces/CVAE_TCN_Vamp_Cond_TO_7.png")
+    #displayer.plot_latent_spaces_labels(model,"data_orly/figures/latent_spaces/CVAE_TCN_Vamp_Cond_TO_7.png")
     return 0
 
 
