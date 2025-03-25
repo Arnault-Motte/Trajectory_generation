@@ -79,10 +79,15 @@ def main() -> int:
     ## Testing reconstuction on one batch
 
     x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
+    ordered_labels = [li for _, label in data_2 for li in label.tolist()]
+    ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
+    print(set(ordered_labels))
     print(x_recon.shape, "\n")
-    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
+    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2,landing=True)
 
-    traffic_f = data_cleaner.output_converter(x_recon)
+    traffic_f = data_cleaner.output_converter(x_recon,landing=True)
+
+    displayer.plot_compare_traffic_hue(traffic_init,traffic_f,ordered_labels,n_trajectories=1000,plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_7_cond_better_recons.png")
 
     traffic_f.data.to_pickle(
         "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_7_vr_direct.pkl"

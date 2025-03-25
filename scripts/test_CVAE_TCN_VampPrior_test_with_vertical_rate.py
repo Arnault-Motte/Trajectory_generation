@@ -73,6 +73,14 @@ def main() -> int:
         "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct.pth"
     )
 
+    displayer.plot_distribution_typecode_label_generation(
+        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_1.png",
+        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_2.png",
+        model,
+        hist=True,
+        bounds=(0, 4000),
+    )
+
     ## Testing reconstuction on one batch
 
     x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
@@ -86,13 +94,7 @@ def main() -> int:
     )
     # print(data_cleaner.first_n_flight_delta_time(traffic_f))
 
-    displayer.plot_distribution_typecode_label_generation(
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct.png",
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct.png",
-        model,
-        hist=True,
-        bounds=(0, 4000),
-    )
+
     return 0
 
 

@@ -15,7 +15,7 @@ from data_orly.src.generation.test_display import Displayer
 
 def main() -> int:
     print(sys.path)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     ## Getting the data
 
@@ -27,9 +27,9 @@ def main() -> int:
     )
     displayer = Displayer(data_cleaner)
     data = data_cleaner.clean_data_several_datasets()
-    #-----------------------------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------------------------
     labels = data_cleaner.return_labels_datasets()
-    #print(labels, labels.shape)
+    # print(labels, labels.shape)
     labels_dim = labels.shape[1]
 
     ##Getting the model
@@ -77,23 +77,44 @@ def main() -> int:
     )
 
     ## Testing reconstuction on one batch
-
-    x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
-    print(x_recon.shape, "\n")
-    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
+    b = 500
+    num_b = 2
+    x_recon, data_2 = model.reproduce_data(data, labels, b, num_b)
+    print("|--data reproduced--|")
     ordered_labels = [li for _, label in data_2 for li in label.tolist()]
-    ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
-    print(ordered_labels)
+    ordered_labels = data_cleaner.one_hot.inverse_transform(ordered_labels)
+    print(ordered_labels.shape)
+    print(x_recon.shape, "\n")
+    print("|--labels computed--|")
+    label_list = ordered_labels.flatten().tolist()[: b * num_b]
+    traffic_init = data_cleaner.dataloader_traffic_converter(
+        data_2, 2, labels=label_list
+    )
+    traffic_f = data_cleaner.output_converter_several_datasets(
+        x_recon, label_list
+    )
 
-    traffic_f = data_cleaner.output_converter(x_recon)
+    reordered_labels = data_cleaner.reordered_labels(ordered_labels, b * num_b)
+
+    # traffic_f = data_cleaner.output_converter(x_recon)
     displayer.plot_compare_traffic_hue(
         traffic_init,
         generated_traffic=traffic_f,
-        labels_hue= ordered_labels,
+        labels_hue=reordered_labels,
         plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_landing.png",
     )
-    traffic_f.data.to_pickle(
-        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_and landings.pkl"
+
+    displayer.plot_generated_label(
+        model,
+        label="d0",
+        plot_path="data_orly/figures/recons/CVAE_TCN_Vamp_Recons_d0.png",
+        num_point=2000,
+    )
+    displayer.plot_generated_label(
+        model,
+        label="d1",
+        plot_path="data_orly/figures/recons/CVAE_TCN_Vamp_Recons_d1.png",
+        num_point=2000,
     )
 
     return 0

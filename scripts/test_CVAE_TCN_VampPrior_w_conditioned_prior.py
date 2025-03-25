@@ -67,6 +67,7 @@ def main()->int:
 
     ## Training the model
     model.fit(data,labels, epochs=1000, lr=1e-3, batch_size=500)
+    model.save_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_conditioned.pth")
 
 
     ## Testing reconstuction on one batch
@@ -75,11 +76,12 @@ def main()->int:
     print(x_recon.shape, "\n")
     traffic_init = data_cleaner.dataloader_traffic_converter(data_2,2)
 
+
     traffic_f = data_cleaner.output_converter(x_recon)
     displayer.plot_compare_traffic(traffic_init, traffic_f,plot_path="data_orly/figures/CVAE_TCN_vamp_Recons_take_off_7_conditioned.png")  # noqa: E501
     traffic_f.data.to_pickle('data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_7_conditioned.pkl')
     #print(data_cleaner.first_n_flight_delta_time(traffic_f))
-    model.save_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_conditioned.pth")
+  
 
     displayer.plot_latent_space_top10_labels(2000,model,'data_orly/figures/CVAE_TCN_vamp_Latent_space_take_off_7_conditioned.png')
     return 0

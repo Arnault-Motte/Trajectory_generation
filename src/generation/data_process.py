@@ -12,6 +12,38 @@ from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
 
+### Function to get the mean end point of the trajectories
+def get_mean_end_point(traff: Traffic) -> tuple:
+    total_lat = 0
+    total_long = 0
+    for flight in traff:
+        lat_f = flight.data.iloc[-1]["latitude"]
+        long_f = flight.data.iloc[-1]["longitude"]
+
+        total_lat += lat_f
+        total_long += long_f
+        # print(f'({lat_f},{long_f})')
+    n_traff = len(traff)
+    mean_point = (total_lat / n_traff, total_long / n_traff)
+    return mean_point
+
+
+def get_mean_start_point(traff: Traffic) -> tuple:
+    total_lat = 0
+    total_long = 0
+    for flight in traff:
+        lat_f = flight.data.iloc[0]["latitude"]
+        long_f = flight.data.iloc[0]["longitude"]
+
+        total_lat += lat_f
+        total_long += long_f
+        # print(f'({lat_f},{long_f})')
+
+    n_traff = len(traff)
+    mean_point = (total_lat / n_traff, total_long / n_traff)
+    return mean_point
+
+
 def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
     traffics = [
         Traffic.from_file(file_name).aircraft_data() for file_name in file_names
@@ -27,6 +59,11 @@ def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
     sampled_traffic = sum(lis_traf)
     print("Size of custom traffic : ", len(sampled_traffic))
     return sampled_traffic
+
+
+def is_ascending(traff: Traffic) -> bool:
+    vr_mean = traff.data["vertical_rate"].mean()
+    return vr_mean > 0
 
 
 class Data_cleaner:
@@ -59,6 +96,8 @@ class Data_cleaner:
         self.seq_len = seq_len
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
+        if len(file_names) != 0:
+            self.traffic_ascend = self.is_ascedending_per_traffic()
 
     def traffic_only_top_n(self, top_num: int, tra: Traffic) -> Traffic:
         top_10 = self.get_top_10_planes()
@@ -77,7 +116,11 @@ class Data_cleaner:
         return final_traf
 
     def dataloader_traffic_converter(
-        self, data: DataLoader, num_epoch: int
+        self,
+        data: DataLoader,
+        num_epoch: int,
+        landing: bool = False,
+        labels: list[str] = [],
     ) -> Traffic:
         list_traff = []
         i = 0
@@ -87,13 +130,24 @@ class Data_cleaner:
             i += 1
             list_traff.append(batch[0])
         total_tensor = torch.cat(list_traff, dim=0)
-        return self.output_converter(total_tensor)
+        return (
+            self.output_converter(total_tensor, landing=landing)
+            if len(labels) == 0
+            else self.output_converter_several_datasets(total_tensor, labels)
+        )
 
-    def output_converter(self, x_recon: torch.Tensor) -> Traffic:
-        mean_point = self.get_mean_end_point()
+    def output_converter(
+        self, x_recon: torch.Tensor, landing: bool = False
+    ) -> Traffic:
+        mean_point = (
+            self.get_mean_end_point()
+            if not landing
+            else self.get_mean_start_point()
+        )
         coordinates = {"latitude": mean_point[0], "longitude": mean_point[1]}
 
         batch_size = x_recon.size(0)
+        
         x_np = x_recon.cpu().detach().numpy()
         x_np = self.unscale(x_np)
         x_np = x_np.reshape(-1, self.num_channels)
@@ -117,9 +171,90 @@ class Data_cleaner:
             n_samples=batch_size,
             n_obs=self.seq_len,
             coordinates=coordinates,
-            forward=False,
+            forward=landing,
         )
         return Traffic(x_df)
+
+    def is_ascedending_per_traffic(self) -> list[bool]:
+        traffics = self.return_traff_per_dataset()
+        return [is_ascending(traff) for traff in traffics]
+
+    def get_mean_points(self) -> list[tuple]:
+        all_means = []
+        traffics = self.return_traff_per_dataset()
+        is_ascend = self.traffic_ascend
+        assert len(traffics) == len(is_ascend)
+        for i, traff in enumerate(traffics):
+            mean_point = (
+                get_mean_start_point(traff)
+                if is_ascend[i]
+                else get_mean_end_point(traff)
+            )
+            all_means.append(mean_point)
+        return all_means
+
+    def output_converter_several_datasets(
+        self, x_recon: torch.Tensor, labels: list[str]
+    ) -> Traffic:
+        mean_points = self.get_mean_points()
+
+        coordinates = [
+            {"latitude": mean_point[0], "longitude": mean_point[1]}
+            for mean_point in mean_points
+        ]
+
+        batch_size = x_recon.size(0)
+        x_np = x_recon.cpu().detach().numpy()
+        x_np = self.unscale(x_np)
+        x_np = x_np.reshape(-1, self.num_channels)
+        x_df = pd.DataFrame(x_np, columns=self.columns)
+
+        if "altitude" not in self.columns:
+            altitude = [10000 for _ in range(len(x_df))]
+            x_df["altitude"] = altitude
+
+        if "timedelta" not in self.columns:
+            time_delta = [2 * (i // self.seq_len) for i in range(len(x_df))]
+            x_df["timedelta"] = time_delta
+
+        x_df["timestamp"] = datetime.datetime(2020, 5, 17) + x_df[  # noqa: DTZ001
+            "timedelta"
+        ].apply(lambda x: datetime.timedelta(seconds=x))
+        x_df["icao24"] = [str(i // self.seq_len) for i in range(len(x_df))]
+        print(len(labels), len(x_df), len(x_df) // self.seq_len)
+        x_df["label"] = [
+            labels[i // self.seq_len] for i in range(self.seq_len * len(labels))
+        ]
+        # print( x_df["label"])
+
+        grouped_x_df = {
+            group: group_df for group, group_df in x_df.groupby("label")
+        }
+
+        is_ascend = self.traffic_ascend
+        all_labels = self.return_unique_labels_datasets()
+        all_dfs = []
+        print(all_labels)
+        for i, l in enumerate(all_labels):
+            print(l)
+            df = grouped_x_df.get(l, pd.DataFrame()).reset_index(drop=True)
+            if len(df) == 0:
+                print("la")
+                continue
+            coord = coordinates[i]
+            df = compute_latlon_from_trackgs(
+                df,
+                n_samples=len(df) // self.seq_len,
+                n_obs=self.seq_len,
+                coordinates=coord,
+                forward=is_ascend[i],
+            )
+
+            all_dfs.append(df)
+
+        f_df = pd.concat(all_dfs)
+
+        return Traffic(f_df)
 
     def clean_data(self) -> np.ndarray:
         flights = []
@@ -155,7 +290,7 @@ class Data_cleaner:
             ]
             for i in range(len(self.basic_traffic_data))
         ]
-        #checked
+        # checked
 
         flights = []
         for data in flights_og_list:
@@ -225,9 +360,11 @@ class Data_cleaner:
         print(fligh_per_dataset)
 
         labels = [f"d{i // fligh_per_dataset}" for i in range(data_set_len)]
-        print(labels)
         labels_array = np.array(labels).reshape(-1, 1)
         return self.one_hot.fit_transform(labels_array)
+
+    def return_unique_labels_datasets(self) -> list[str]:
+        return [f"d{i}" for i in range(len(self.file_names))]
 
     def return_traff_per_dataset(self) -> list[Traffic]:
         data_set_len = len(self.basic_traffic_data)
@@ -249,18 +386,10 @@ class Data_cleaner:
 
     ### Function to get the mean end point of the trajectories
     def get_mean_end_point(self) -> tuple:
-        total_lat = 0
-        total_long = 0
-        for flight in self.basic_traffic_data:
-            lat_f = flight.data.iloc[-1]["latitude"]
-            long_f = flight.data.iloc[-1]["longitude"]
+        return get_mean_end_point(self.basic_traffic_data)
 
-            total_lat += lat_f
-            total_long += long_f
-            # print(f'({lat_f},{long_f})')
-
-        mean_point = (total_lat / self.n_traj, total_long / self.n_traj)
-        return mean_point
+    def get_mean_start_point(self) -> tuple:
+        return get_mean_start_point(self.basic_traffic_data)
 
     ### Function to unscale the data
     def unscale(self, traj: Traffic) -> np.ndarray:
@@ -286,11 +415,20 @@ class Data_cleaner:
         top_10_planes = flight_counts.head(10).items()
         return list(top_10_planes)
 
-        # df["start"] = [start_time[i//200] for i in range(len(df))]
-        # data = Traffic(df)
-        # landings_temp = data.groupby("icao24").first().reset_index()
-        # planes = Counter(landings_temp['typecode'])
-        # return planes.most_common(10)
+    def reordered_labels(self, labels: np.ndarray,num_flight: int = None) -> np.ndarray:
+        """
+        Reorder the labels to follow the order of the list of datasets.
+        to use when labels are related to the dataset of origin of the traffics
+        Labels must be an array of strings of shape (n_flight,1)
+        """
+        if not num_flight:
+            num_flight = len(labels)
+        labels_order = self.return_unique_labels_datasets()
+        labels_count = dict(Counter(labels.flatten().tolist()[:num_flight]))
+        reordered_labels = [
+            label for label in labels_order for _ in range(labels_count[label])
+        ]
+        return np.array(reordered_labels).reshape(-1,1)
 
 
 def filter_outlier(traff: Traffic) -> Traffic:

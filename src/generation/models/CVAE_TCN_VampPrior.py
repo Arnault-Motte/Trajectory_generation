@@ -524,11 +524,16 @@ class CVAE_TCN_Vamp(nn.Module):
         self.patience = patience
         self.min_delta = min_delta
 
+    def is_conditioned(self)-> bool:
+        return self.prior_weights_layers is not None
     def encode(
         self, x: torch.Tensor, label: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        label = self.labels_encoder_broadcast(label)
-        label = label.view(-1, 1, self.seq_len)
+        if label == None:
+            label = torch.zeros(x.size(0),1,self.seq_len).to(next(self.parameters()).device)
+        else:
+            label = self.labels_encoder_broadcast(label)
+            label = label.view(-1, 1, self.seq_len)
         mu, log_var = self.encoder(x, label)
         return mu, log_var
 
@@ -564,7 +569,7 @@ class CVAE_TCN_Vamp(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        labels: torch.tensor,
+        labels: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -573,9 +578,13 @@ class CVAE_TCN_Vamp(nn.Module):
         torch.Tensor,
         torch.Tensor,
     ]:
+        conditioned = self.is_conditioned()
+        labels_encoder = labels
+        if not conditioned:
+            labels_encoder = None
         mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent()
         x = x.permute(0, 2, 1)  # 500 3 200
-        mu, log_var = self.encode(x, labels)
+        mu, log_var = self.encode(x, labels_encoder)
         z = self.reparametrize(mu, log_var).to(next(self.parameters()).device)
         x_reconstructed = self.decode(z, labels)
         return x_reconstructed, z, mu, log_var, mu_pseudo, log_var_pseudo

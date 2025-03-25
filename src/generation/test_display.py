@@ -617,9 +617,7 @@ class Displayer:
                 color = label_to_color[lab]
                 flight.plot(ax[0], color=color, alpha=0.7)
 
-            for i, flight in enumerate(
-                flights_gen_traffic
-            ):
+            for i, flight in enumerate(flights_gen_traffic):
                 lab = labels_hue[i]
                 color = label_to_color[lab]
                 flight.plot(ax[1], color=color, alpha=0.7)
@@ -694,3 +692,49 @@ class Displayer:
             ax.legend(handles=handles, title="Labels")
             plt.savefig(plot_path)
         return 1
+
+    def plot_generated_label(
+        self,
+        model: CVAE_TCN_Vamp,
+        label: str,
+        plot_path: str,
+        num_point: int = 2000,
+        batch_size: int = 500,
+        take_off: bool = False,
+    ) -> None:
+        labels_array = np.full(batch_size, label).reshape(-1, 1)
+        labels_transf = self.data_clean.one_hot.transform(labels_array)
+        labels_tensor = torch.Tensor(labels_transf).to(
+            next(model.parameters()).device
+        )
+
+        generated_point = model.sample(num_point, batch_size, labels_tensor)
+
+        # print("|--Converting--|")
+        traf = self.data_clean.output_converter(
+            generated_point, landing=take_off
+        )
+
+        self.plot_traffic(traf, plot_path=plot_path)
+
+    def plot_generated_label_dataset(
+        self,
+        model: CVAE_TCN_Vamp,
+        label: str,
+        plot_path: str,
+        num_point: int = 2000,
+        batch_size: int = 500,
+    ) -> None:
+        labels_array = np.full(batch_size, label).reshape(-1, 1)
+        labels_transf = self.data_clean.one_hot.transform(labels_array)
+        labels_tensor = torch.Tensor(labels_transf).to(
+            next(model.parameters()).device
+        )
+
+        generated_point = model.sample(num_point, batch_size, labels_tensor)
+
+        # print("|--Converting--|")
+        labels_list = np.full(num_point,label).tolist()
+        traf = self.data_clean.output_converter_several_datasets(generated_point,labels_list)
+
+        self.plot_traffic(traf, plot_path=plot_path)
