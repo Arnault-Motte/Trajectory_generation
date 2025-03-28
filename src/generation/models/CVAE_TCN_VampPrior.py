@@ -19,6 +19,7 @@ def get_data_loader(
     batch_size: int,
     train_split: float = 0.8,
     shuffle: bool = True,
+    num_worker: int = 4,
 ) -> tuple[DataLoader, DataLoader]:
     data2 = torch.tensor(data, dtype=torch.float32)
     labels_tensor = torch.tensor(labels, dtype=torch.float32)
@@ -26,8 +27,15 @@ def get_data_loader(
     train_size = int(train_split * len(dataset))
     test_size = len(dataset) - train_size
     train_data, val_data = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=shuffle)
-    test_loader = DataLoader(val_data, batch_size=batch_size, shuffle=shuffle)
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_worker,
+    )
+    test_loader = DataLoader(
+        val_data, batch_size=batch_size, shuffle=shuffle, num_workers=num_worker
+    )
     return train_loader, test_loader
 
 
@@ -458,9 +466,10 @@ class CVAE_TCN_Vamp(nn.Module):
         num_classes: int = None,
         conditioned_prior: bool = False,
         temp_save: str = "best_model.pth",
+        num_worker: int = 4,
     ):
         super(CVAE_TCN_Vamp, self).__init__()
-
+        self.num_worker = num_worker
         self.temp_save = temp_save
         self.labels_encoder_broadcast = Label_mapping(
             num_classes is None,
@@ -524,13 +533,16 @@ class CVAE_TCN_Vamp(nn.Module):
         self.patience = patience
         self.min_delta = min_delta
 
-    def is_conditioned(self)-> bool:
+    def is_conditioned(self) -> bool:
         return self.prior_weights_layers is not None
+
     def encode(
         self, x: torch.Tensor, label: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if label == None:
-            label = torch.zeros(x.size(0),1,self.seq_len).to(next(self.parameters()).device)
+        if label is None:
+            label = torch.zeros(x.size(0), 1, self.seq_len).to(
+                next(self.parameters()).device
+            )
         else:
             label = self.labels_encoder_broadcast(label)
             label = label.view(-1, 1, self.seq_len)
@@ -538,7 +550,10 @@ class CVAE_TCN_Vamp(nn.Module):
         return mu, log_var
 
     def pseudo_inputs_latent(self) -> tuple[torch.Tensor, torch.Tensor]:
-        pseudo_labels = self.pseudo_labels_layer.forward()
+        conditioned = self.is_conditioned()
+        pseudo_labels = (
+            self.pseudo_labels_layer.forward() if conditioned else None
+        )
         pseudo_inputs = self.pseudo_inputs_layer.forward()
         mu, log_var = self.encode(pseudo_inputs, pseudo_labels)
         return mu, log_var
@@ -602,7 +617,7 @@ class CVAE_TCN_Vamp(nn.Module):
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=lr)
         dataloader_train, data_loader_val = get_data_loader(
-            x, labels, batch_size
+            x, labels, batch_size, num_worker=self.num_worker
         )
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
         early_stopping = (
@@ -769,7 +784,14 @@ class CVAE_TCN_Vamp(nn.Module):
     ) -> tuple[torch.Tensor, DataLoader]:
         if not self.trained:
             raise Exception("Model not trained yet")
-        data1, _ = get_data_loader(data, labels, batch_size, 0.8, shuffle=False)
+        data1, _ = get_data_loader(
+            data,
+            labels,
+            batch_size,
+            0.8,
+            shuffle=False,
+            num_worker=self.num_worker,
+        )
         i = 0
         batches_reconstructed = []
         for batch, labels_batch in data1:
@@ -808,7 +830,9 @@ class CVAE_TCN_Vamp(nn.Module):
                 else self.prior_weights
             )
             print("prior_weight", prior_weights.shape)
-            print("sizes = ", )
+            print(
+                "sizes = ",
+            )
             mu, log_var = self.pseudo_inputs_latent()
             print("mu", mu.shape)
             print("log_var ", log_var.shape)

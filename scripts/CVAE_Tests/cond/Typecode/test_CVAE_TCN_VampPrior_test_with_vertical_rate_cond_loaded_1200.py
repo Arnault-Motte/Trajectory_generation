@@ -1,16 +1,20 @@
 import sys  # noqa: I001
 import os
 
+current_path = os.getcwd()
 sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    os.path.abspath(current_path)
 )
 
+print("Current working directory:", current_path)
+print(os.path.dirname(__file__))
 
 import torch
 
 from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import *  # noqa: F403
 from data_orly.src.generation.test_display import Displayer
+from data_orly.src.generation.generation import Generator
 
 
 def main() -> int:
@@ -41,7 +45,7 @@ def main() -> int:
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 800
+    pseudo_input_num = 1200
     patience = 30
     min_delta = -100
     labels_latent = 16
@@ -65,42 +69,44 @@ def main() -> int:
         early_stopping=True,
         patience=patience,
         min_delta=min_delta,
-        temp_save="best_model_6.pth",
+        temp_save="best_model_1200.pth",
         conditioned_prior=True,
     ).to(device)
 
     ## Training the model
-   # model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
-    model.load_model("data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct_cond.pth")
-    # model.save_model(
-    #     "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct_cond.pth"
-    # )
+    # model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
+    model.load_model(
+        "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct_cond_v15.pth"
+    )
+
 
     ## Testing reconstuction on one batch
 
     x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
-    ordered_labels = [li for _, label in data_2 for li in label.tolist()]
-    ordered_labels= data_cleaner.one_hot.inverse_transform(ordered_labels)
-    print(set(ordered_labels))
     print(x_recon.shape, "\n")
-    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2,landing=True)
+    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
 
-    traffic_f = data_cleaner.output_converter(x_recon,landing=True)
-
-    displayer.plot_compare_traffic_hue(traffic_init,traffic_f,ordered_labels,n_trajectories=1000,plot_path="data_orly/figures/recons/CVAE_TCN_vamp_Recons_take_off_7_cond_better_recons.png")
+    traffic_f = data_cleaner.output_converter(x_recon)
 
     traffic_f.data.to_pickle(
-        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_7_vr_direct.pkl"
+        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_7_vr_direct_v15.pkl"
     )
     # print(data_cleaner.first_n_flight_delta_time(traffic_f))
 
     displayer.plot_distribution_typecode_label_generation(
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_1.png",
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_2.png",
+        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_1_v15.png",
+        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_2_v15.png",
         model,
         hist=True,
         bounds=(0, 4000),
     )
+
+    gen = Generator(model,data_cleaner)
+
+    top_10 = [label for label,_ in data_cleaner.get_top_10_planes()]
+    gen_traffic = gen.generate_n_flight_per_labels(top_10,2000)
+
+    displayer.plot_traff_labels("data_orly/figures/generation/CVAE_Vamp_w_vr_v_15.png",gen_traffic,top_10)
     return 0
 
 

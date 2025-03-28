@@ -14,15 +14,19 @@ import numpy as np
 
 # Creates a train and test dataloader from a numpy array.
 def get_data_loader(
-    data: np.ndarray, batch_size: int, train_split: float = 0.8
+    data: np.ndarray, batch_size: int, train_split: float = 0.8, num_worker=4
 ) -> tuple[DataLoader, DataLoader]:
     data2 = torch.tensor(data, dtype=torch.float32)
     dataset = TensorDataset(data2)
     train_size = int(train_split * len(dataset))
     test_size = len(dataset) - train_size
     train_data, val_data = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(
+        train_data, batch_size=batch_size, shuffle=True, num_workers=num_worker
+    )
+    test_loader = DataLoader(
+        val_data, batch_size=batch_size, shuffle=True, num_workers=num_worker
+    )
     return train_loader, test_loader
 
 
@@ -383,8 +387,12 @@ class VAE_TCN_Vamp(nn.Module):
         early_stopping: bool = False,
         patience: int = 100,
         min_delta: float = -100.0,
+        num_workers: int = 4,
+        temp_name: str = "best_model.pth",
     ):
         super(VAE_TCN_Vamp, self).__init__()
+
+        self.temp_name = temp_name
         self.encoder = TCN_encoder(
             in_channels,
             out_channels,
@@ -423,6 +431,7 @@ class VAE_TCN_Vamp(nn.Module):
         self.early_stopping = early_stopping
         self.patience = patience
         self.min_delta = min_delta
+        self.num_workers = num_workers
 
     def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         mu, log_var = self.encoder(x)
@@ -472,10 +481,17 @@ class VAE_TCN_Vamp(nn.Module):
     ) -> None:
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=lr)
-        dataloader_train, data_loader_val = get_data_loader(x, batch_size)
+        dataloader_train, data_loader_val = get_data_loader(
+            x, batch_size, num_worker=self.num_workers
+        )
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
         early_stopping = (
-            Early_stopping(patience=self.patience, min_delta=self.min_delta)
+            Early_stopping(
+                patience=self.patience,
+                min_delta=self.min_delta,
+                best_model_path="data_orly/src/generation/models/saved_temp/"
+                + self.temp_name,
+            )
             if self.early_stopping
             else None
         )
@@ -610,7 +626,9 @@ class VAE_TCN_Vamp(nn.Module):
     ) -> torch.Tensor:
         if not self.trained:
             raise Exception("Model not trained yet")
-        data1, _ = get_data_loader(data, batch_size, 0.8)
+        data1, _ = get_data_loader(
+            data, batch_size, 0.8, num_worker=self.num_workers
+        )
         i = 0
         batches_reconstructed = []
         for batch in data1:
@@ -628,8 +646,10 @@ class VAE_TCN_Vamp(nn.Module):
         # getting the prior
         with torch.no_grad():
             mu, log_var = self.pseudo_inputs_latent()
-        distrib = create_mixture(mu, log_var,vamp_weight=self.prior_weights.squeeze(0))
-        print(mu.shape,log_var.shape,self.prior_weights.shape)
+        distrib = create_mixture(
+            mu, log_var, vamp_weight=self.prior_weights.squeeze(0)
+        )
+        print(mu.shape, log_var.shape, self.prior_weights.shape)
         samples = distrib.sample((num_sample,))
         return samples
 

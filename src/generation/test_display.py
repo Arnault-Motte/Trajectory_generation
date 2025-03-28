@@ -15,6 +15,7 @@ import numpy as np
 from data_orly.src.generation.data_process import (
     Data_cleaner,
     compute_vertical_rate,
+    jason_shanon,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
@@ -24,7 +25,7 @@ from data_orly.src.generation.models.VAE_TCN_VampPrior import (
     VAE_TCN_Vamp,
     get_data_loader,
 )
-from traffic.core import Traffic, Flight
+from traffic.core import Flight, Traffic
 
 ###TEST for seeing the reconstruction of the autoencoder
 
@@ -32,6 +33,16 @@ from traffic.core import Traffic, Flight
 class Displayer:
     def __init__(self, data_clean: Data_cleaner) -> None:
         self.data_clean = data_clean
+        self.type_code_vrate = {}
+        self.type_code_vrate_gen = {}
+
+    def return_label_shanon(self) -> dict:
+        dic_res = {}
+        for label, _ in self.type_code_vrate.items():
+            dic_res[label] = jason_shanon(
+                self.type_code_vrate[label], self.type_code_vrate_gen[label]
+            )
+        return dic_res
 
     def plot_traffic(
         self,
@@ -231,21 +242,30 @@ class Displayer:
             self.plot_latent_space_for_label(label, num_point, model, path)
         return 0
 
-    def plot_distribution_typecode(
-        self, path1: str, path2: str, hist: bool = False
-    ) -> None:
-        top_10 = self.data_clean.get_top_10_planes()
+    def set_v_rates_per_typecode(self, chosen_labels: list[str]) -> None:
         data = self.data_clean.basic_traffic_data
-        if hist:
-            path1 = path1.split(".")[0] + "_hist.png"
-            path2 = path2.split(".")[0] + "_hist.png"
         map_typecode_vrate = {
             code: [
                 flight.vertical_rate_mean
                 for flight in data.query(f"typecode in ['{code}']")
             ]
-            for code, _ in top_10
+            for code in chosen_labels
         }
+        self.type_code_vrate = map_typecode_vrate
+
+    def plot_distribution_typecode(
+        self, path1: str, path2: str, hist: bool = False
+    ) -> None:
+        
+        data = self.data_clean.basic_traffic_data
+        if hist:
+            path1 = path1.split(".")[0] + "_hist.png"
+            path2 = path2.split(".")[0] + "_hist.png"
+
+        labels_list = self.data_clean.get_typecodes_labels()
+        self.set_v_rates_per_typecode(labels_list)
+        map_typecode_vrate = self.type_code_vrate
+
         for typecode, vertical_rates in map_typecode_vrate.items():
             if not hist:
                 sns.kdeplot(vertical_rates, label=typecode, linewidth=2)
@@ -292,34 +312,26 @@ class Displayer:
         plt.savefig(path2)
         plt.show()
 
-    def plot_distribution_typecode_label_generation(
+    def generated_data_v_rates_to_be_displayed(
         self,
-        path1: str,
-        path2: str,
         model: CVAE_TCN_Vamp,
-        number_of_point: int = 2000,
-        hist: bool = False,
-        bounds: tuple[float, float] = (-2000, 2000),
+        n_points: int,
+        bounds: tuple[float, float],
+        labels_to_gen: list[str],
+        batch_size: int = 500,
     ) -> None:
-        top_10 = self.data_clean.get_top_10_planes()
-        # data = self.data_clean.basic_traffic_data
-        # map_typecode_vrate = {
-        #     code: [
-        #         flight.vertical_rate_mean
-        #         for flight in data.query(f"typecode in ['{code}']")
-        #     ]
-        #     for code, _ in top_10
-        # }
-        if hist:
-            path1 = path1.split(".")[0] + "_hist.png"
-            path2 = path2.split(".")[0] + "_hist.png"
+        """
+        Generates n_points synthetic trajectory per existing label in the data using the model in entry.
+        Then computes the mean Vertical rate for each generated trajectory and saves them in self.
+        Use bounds to bound the  Vertical rates between two values (filtering out the extrems).
+        Ex bounds = (0,4000)
+        """
         map_typecode_vrate = dict()
-        print("|--Data Generation--|")
-
-        for label, _ in tqdm(top_10, desc="Generating"):
+        print("|--Generating data--|")
+        for label in tqdm(labels_to_gen, desc="Generating"):
             with tqdm(total=4, desc=f"Processing {label}") as pbar:
                 # print("|--Encoding--|")
-                labels_array = np.full(500, label).reshape(-1, 1)
+                labels_array = np.full(batch_size, label).reshape(-1, 1)
                 transformed_label = self.data_clean.one_hot.transform(
                     labels_array
                 )
@@ -329,7 +341,7 @@ class Displayer:
                 labels_final = torch.Tensor(transformed_label).to(
                     next(model.parameters()).device
                 )
-                sampled = model.sample(number_of_point, 500, labels_final)
+                sampled = model.sample(n_points, batch_size, labels_final)
                 pbar.update(1)
 
                 # print("|--Converting--|")
@@ -346,7 +358,30 @@ class Displayer:
                     if bounds[0] <= flight.vertical_rate_mean <= bounds[1]
                 ]
                 pbar.update(1)
+        self.type_code_vrate_gen = map_typecode_vrate
 
+    def plot_distribution_typecode_label_generation(
+        self,
+        path1: str,
+        path2: str,
+        model: CVAE_TCN_Vamp,
+        number_of_point: int = 2000,
+        hist: bool = False,
+        bounds: tuple[float, float] = (-2000, 2000),
+        batch_size: int = 500,
+    ) -> None:
+ 
+      
+        if hist:
+            path1 = path1.split(".")[0] + "_hist.png"
+            path2 = path2.split(".")[0] + "_hist.png"
+
+        labels_list =  self.data_clean.get_typecodes_labels()
+        print(labels_list)
+        self.generated_data_v_rates_to_be_displayed(
+            model, number_of_point, bounds, labels_list, batch_size
+        )
+        map_typecode_vrate = self.type_code_vrate_gen
         print("|--Data Generated--|")
         for typecode, vertical_rates in map_typecode_vrate.items():
             if not hist:
@@ -396,19 +431,6 @@ class Displayer:
         plt.savefig(path2)
         plt.show()
 
-    # def test_generated(self, model: CVAE_TCN_Vamp) -> None:
-    #     labels_array = np.full(500, label).reshape(-1, 1)
-    #     transformed_label = self.data_clean.one_hot.transform(labels_array)
-
-    #     # print("|--Sampling--|")
-    #     labels_final = torch.Tensor(transformed_label).to(
-    #         next(model.parameters()).device
-    #     )
-    #     sampled = model.sample(number_of_point, 500, labels_final)
-
-    #     # print("|--Converting--|")
-    #     traf = self.data_clean.output_converter(sampled)
-
     def display_pseudo_inputs(self, model: CVAE_TCN_Vamp, path: str) -> None:
         pseudo_in_rec = model.get_pseudo_inputs_recons()
         traf = self.data_clean.output_converter(pseudo_in_rec)
@@ -456,9 +478,9 @@ class Displayer:
     def plot_latent_spaces_labels(
         self, model: CVAE_TCN_Vamp, plt_path: str
     ) -> int:
-        top10 = self.data_clean.get_top_10_planes()
+        labels_list = self.data_clean.get_typecodes_labels()
         list_all_points = []
-        for label, _ in top10:
+        for label, _ in labels_list:
             traff_data = self.data_clean.basic_traffic_data.data
             traffic_curated = Traffic(
                 traff_data[traff_data["typecode"] == label]
@@ -734,7 +756,172 @@ class Displayer:
         generated_point = model.sample(num_point, batch_size, labels_tensor)
 
         # print("|--Converting--|")
-        labels_list = np.full(num_point,label).tolist()
-        traf = self.data_clean.output_converter_several_datasets(generated_point,labels_list)
+        labels_list = np.full(num_point, label).tolist()
+        traf = self.data_clean.output_converter_several_datasets(
+            generated_point, labels_list
+        )
 
         self.plot_traffic(traf, plot_path=plot_path)
+
+    def give_bounds_vr_rate(self) -> tuple[float, float]:
+        """ "
+        Returns the min and max values found in the vertical rates means in the data.
+        Be careful to compute the vertical rates befor using the function
+        """
+        if not self.type_code_vrate:
+            raise ValueError("Please compute the vertical rates beforehand")
+
+        vertical_rates = [
+            rate for rates in self.type_code_vrate.values() for rate in rates
+        ]
+        return min(vertical_rates), max(vertical_rates)
+
+    def plot_v_rate_true_top_generated(
+        self,
+        plt_path: str,
+        n_point: int,
+        model: CVAE_TCN_Vamp,
+        regenerate: bool = False,
+        batch_size: int = 500,
+        hist: bool = False,
+    ) -> None:
+        """
+        Plots the distribution of the vertical rates for each of the typecodes.
+        Compares the generated vertical rates with the true ones.
+        """
+
+   
+        labels_list =self.data_clean.get_typecodes_labels()
+
+        if not self.type_code_vrate or regenerate:
+            self.set_v_rates_per_typecode(labels_list)
+        if not self.type_code_vrate_gen or regenerate:
+            bounds = self.give_bounds_vr_rate()
+            self.generated_data_v_rates_to_be_displayed(
+                model,
+                n_point,
+                bounds,
+                labels_to_gen=labels_list,
+                batch_size=batch_size,
+            )
+
+        js_shan = self.return_label_shanon()
+        map_typecode_vrate = self.type_code_vrate
+        map_typecode_vrate_gen = self.type_code_vrate_gen
+
+        # Define number of rows and columns
+        rows, cols = 2, 5
+        fig, axes = plt.subplots(
+            rows, cols, figsize=(15, 8)
+        )  # Adjust figure size
+
+        # Flatten the axes array for easy iteration
+        axes = axes.flatten()
+
+        # Iterate over each typecode and corresponding subplot
+        for ax, (typecode, vertical_rates) in zip(
+            axes, map_typecode_vrate.items()
+        ):
+            if not hist:
+                sns.kdeplot(
+                    vertical_rates,
+                    ax=ax,
+                    linewidth=2,
+                    color="blue",
+                    alpha=0.5,
+                    label="True",
+                )
+                sns.kdeplot(
+                    map_typecode_vrate_gen[typecode],
+                    ax=ax,
+                    linewidth=2,
+                    color="orange",
+                    alpha=0.5,
+                    label="Generated",
+                )
+                ax.set_ylabel("Density")
+            else:
+                sns.histplot(
+                    vertical_rates,
+                    ax=ax,
+                    bins=30,
+                    kde=True,
+                    color="blue",
+                    alpha=0.5,
+                    label="True",
+                )
+                sns.histplot(
+                    map_typecode_vrate_gen[typecode],
+                    ax=ax,
+                    bins=30,
+                    kde=True,
+                    color="orange",
+                    alpha=0.5,
+                    label="generated",
+                )
+                ax.set_ylabel("Count")
+            ax.set_title(
+                f"Typecode: {typecode}, Shanon : {js_shan[typecode]:.2f}"
+            )
+            ax.set_xlabel("Vertical Rate")
+            ax.legend()
+
+        # Remove any empty subplots (if less than 10 typecodes)
+        for i in range(len(map_typecode_vrate), rows * cols):
+            fig.delaxes(axes[i])
+
+        plt.tight_layout()
+        plt.savefig(plt_path)
+        plt.show()
+
+    def display_traffic_per_typecode(
+        self, plt_path: str, background: bool = False
+    ) -> None:
+        all_traffic = self.data_clean.traffic_per_label()
+        labels = self.data_clean.get_typecodes_labels()
+        with plt.style.context("traffic"):
+            fig, axes = plt.subplots(
+                2,
+                5,
+                subplot_kw=dict(projection=Lambert93()),
+                figsize=(15, 8),
+                sharex=True,
+                sharey=True,
+            )
+            axes = axes.flatten()
+
+            for ax, traff, label in tqdm(
+                zip(axes, all_traffic, labels), desc="Plotting"
+            ):
+                traff.plot(ax, alpha=0.5, color="orange")
+                ax.set_title(f"Typecode: {label},\n N = {len(traff)}")
+
+            plt.tight_layout()
+            plt.savefig(plt_path)
+            plt.show()
+
+    def plot_traff_labels(
+        self, plt_path: str, traffic_list: list[Traffic], labels: list[str]
+    ) -> None:
+        all_traffic = traffic_list
+        labels = labels
+        with plt.style.context("traffic"):
+            fig, axes = plt.subplots(
+                2,
+                5,
+                subplot_kw=dict(projection=Lambert93()),
+                figsize=(15, 8),
+                sharex=True,
+                sharey=True,
+            )
+            axes = axes.flatten()
+
+            for ax, traff, label in tqdm(
+                zip(axes, all_traffic, labels), desc="Plotting"
+            ):
+                traff.plot(ax, alpha=0.5, color="orange")
+                ax.set_title(f"Typecode: {label},\n N = {len(traff)}")
+
+            plt.tight_layout()
+            plt.savefig(plt_path)
+            plt.show()

@@ -2,6 +2,7 @@ import datetime
 from collections import Counter
 
 import torch
+from scipy.spatial.distance import jensenshannon
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from torch.utils.data import DataLoader
 
@@ -66,6 +67,21 @@ def is_ascending(traff: Traffic) -> bool:
     return vr_mean > 0
 
 
+def traffic_only_chosen(
+    traff: Traffic, chosen_typecodes: list[str], seq_len:int
+) -> tuple[Traffic, list[str]]:
+    data = traff.data
+
+    typecodes = [flight.typecode for flight in traff]
+    data["typecode"] = [typecode for typecode in typecodes for _ in range(seq_len)]
+    num_typecodes = Counter(typecodes)
+    ordered_typecodes = [typecode for typecode, _ in num_typecodes.most_common()]
+    filtered_data = data[data["typecode"].isin(chosen_typecodes)]
+    new_traff = Traffic(filtered_data)
+
+    return new_traff, ordered_typecodes
+
+
 class Data_cleaner:
     def __init__(
         self,
@@ -74,10 +90,14 @@ class Data_cleaner:
         seq_len: int = 200,
         file_names: list[str] = [],
         airplane_types_num: int = -1,
+        chosen_typecodes: list[str] = [],
         total: bool = False,
     ):
+        # Check if we have any filename provided
         if len(file_names) == 0 and not file_name:
             raise ValueError("file_name and file_names are both None")
+
+        # Creating the data from one or several files
         self.basic_traffic_data = (
             Traffic.from_file(file_name).aircraft_data()
             if file_name
@@ -85,19 +105,44 @@ class Data_cleaner:
         )
         self.file_names = file_names
         self.total = total
-        if airplane_types_num != -1:
+
+        # If we want to study only the top airplane_types_num most common typecodes
+        if airplane_types_num != -1 and len(chosen_typecodes) == 0:
             self.airplane_types_num = airplane_types_num
             self.basic_traffic_data = self.traffic_only_top_n(
                 airplane_types_num, self.basic_traffic_data
             )
+
+        chosen_typecodes_temp = chosen_typecodes
+        # if we want to study specific aircrafts trajectories
+        if len(chosen_typecodes) != 0:
+            self.basic_traffic_data,chosen_typecodes_temp = traffic_only_chosen(
+                self.basic_traffic_data, chosen_typecodes,seq_len=seq_len
+            )
+
+        # save the chose types and their order
+        self.chosen_types = (
+            chosen_typecodes_temp
+            if len(chosen_typecodes) != 0
+            else [label for label,_ in self.get_top_10_planes()]
+        )
+
         self.columns = columns
         self.scaler = MinMaxScaler(feature_range=(-1, 1))
         self.n_traj = len(self.basic_traffic_data)
         self.seq_len = seq_len
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
+
+        # Allows to see which file traectory are landing or taking off
         if len(file_names) != 0:
             self.traffic_ascend = self.is_ascedending_per_traffic()
+
+    def get_typecodes_labels(self) -> list[str]:
+        """
+        Returns the typecodes in the order of interpretation
+        """
+        return self.chosen_types
 
     def traffic_only_top_n(self, top_num: int, tra: Traffic) -> Traffic:
         top_10 = self.get_top_10_planes()
@@ -114,6 +159,21 @@ class Data_cleaner:
         final_traf = temp_traf.query("simple")
         print("Final traffic size : ", len(final_traf))
         return final_traf
+
+    def traffic_per_label(self) -> list[Traffic]:
+        """
+        Return the 10 traffics containing only planes from the 10 most common typecodes
+        """
+        x_df = self.basic_traffic_data.data
+        if "typecode" not in x_df.columns:
+            raise ValueError(
+                "Airplane data must be set before calling the function"
+            )
+        grouped_x_df = {
+            group: group_df for group, group_df in x_df.groupby("typecode")
+        }
+        label_list_order = self.get_typecodes_labels()
+        return [Traffic(grouped_x_df[label]) for label in label_list_order]
 
     def dataloader_traffic_converter(
         self,
@@ -147,7 +207,7 @@ class Data_cleaner:
         coordinates = {"latitude": mean_point[0], "longitude": mean_point[1]}
 
         batch_size = x_recon.size(0)
-        
+
         x_np = x_recon.cpu().detach().numpy()
         x_np = self.unscale(x_np)
         x_np = x_np.reshape(-1, self.num_channels)
@@ -415,7 +475,9 @@ class Data_cleaner:
         top_10_planes = flight_counts.head(10).items()
         return list(top_10_planes)
 
-    def reordered_labels(self, labels: np.ndarray,num_flight: int = None) -> np.ndarray:
+    def reordered_labels(
+        self, labels: np.ndarray, num_flight: int = None
+    ) -> np.ndarray:
         """
         Reorder the labels to follow the order of the list of datasets.
         to use when labels are related to the dataset of origin of the traffics
@@ -428,7 +490,7 @@ class Data_cleaner:
         reordered_labels = [
             label for label in labels_order for _ in range(labels_count[label])
         ]
-        return np.array(reordered_labels).reshape(-1,1)
+        return np.array(reordered_labels).reshape(-1, 1)
 
 
 def filter_outlier(traff: Traffic) -> Traffic:
@@ -501,3 +563,24 @@ def compute_vertical_rate(traffic: Traffic) -> Traffic:
     if "vertical_rate" in traffic.data.columns:
         return traffic
     return traffic.iterate_lazy().pipe(compute_vertical_rate_flight).eval()
+
+
+def jason_shanon(vr_rates_1: np.ndarray, vr_rates_2: np.ndarray) -> float:
+    """ "
+    Compte jason shanon divergence for two different vertical rates distribution sets
+
+    """
+    bins = np.histogram_bin_edges(
+        np.concatenate([vr_rates_1, vr_rates_2]), bins="auto"
+    )
+
+    p, _ = np.histogram(vr_rates_1, bins=bins, density=True)
+    q, _ = np.histogram(vr_rates_2, bins=bins, density=True)
+
+    # Avoid zero probabilities
+    p += 1e-10
+    q += 1e-10
+
+    # Compute KL Divergence
+    js_div = jensenshannon(p, q)  # KL(P || Q)
+    return js_div
