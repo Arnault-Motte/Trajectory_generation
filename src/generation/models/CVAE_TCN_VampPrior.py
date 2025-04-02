@@ -901,3 +901,8 @@ class CVAE_TCN_Vamp(nn.Module):
             generated_traj = self.decode(sample, labels)
 
         return generated_traj.permute(0, 2, 1)
+
+    def get_pseudo_labels(self)-> torch.Tensor:
+        self.eval()
+        with torch.no_grad():
+            return self.pseudo_labels_layer.forward()

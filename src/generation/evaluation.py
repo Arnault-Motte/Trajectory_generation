@@ -1,34 +1,56 @@
 import datetime
+import multiprocessing as mp
 from collections import Counter
+from datetime import timedelta
 
 import torch
-from scipy.spatial.distance import jensenshannon
+from scipy.spatial.distance import cdist, jensenshannon
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
-from numpy._typing._array_like import NDArray
-from tqdm import tqdm
-from traffic.algorithms.generation import compute_latlon_from_trackgs
-from traffic.core import Flight, Traffic
-
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
-    get_data_loader as get_data_loader_labels,
-)
-
 from data_orly.src.generation.data_process import (
     Data_cleaner,
     compute_vertical_rate,
     jason_shanon,
 )
-
-from datetime import timedelta
-import multiprocessing as mp
+from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
+    get_data_loader as get_data_loader_labels,
+)
+from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from numpy._typing._array_like import NDArray
+from traffic.algorithms.generation import compute_latlon_from_trackgs
+from traffic.core import Flight, Traffic
 
 DEFAULT_AIRCRAFT = "A320"
+
+
+def e_distance(
+    traj_gen_flt=np.ndarray, traj_og_flt=np.ndarray, metric:str="euclidean"
+) -> float:
+    x = traj_gen_flt
+    y = traj_og_flt
+    dxy = cdist(x, y, metric=metric)
+    dxx = cdist(x, y, metric=metric)
+    dyy = cdist(y, y, metric=metric)
+
+    m, n = len(x), len(y)
+
+    e_distance = (
+        (2 / (m * n)) * np.sum(dxy)
+        - (1 / (m**2)) * np.sum(dxx)
+        - (1 / (n**2)) * np.sum(dyy)
+    )
+
+    return e_distance
+
+
+def traff_to_flatten_array(traff : Traffic) -> np.ndarray:
+    traff_array = traff.data.to_numpy()
+    
 
 
 def convert_time_delta_to_start_str(time_delta: int) -> str:
@@ -49,9 +71,11 @@ def clean_time_stamp_flight(flight: Flight) -> Flight:
 
 
 def clean_time_stamp_traffic(
-    traff: Traffic, desc: str = "Cleaning timestamps",max_workers:int = 1
+    traff: Traffic, desc: str = "Cleaning timestamps", max_workers: int = 1
 ) -> Traffic:
-    res = traff.pipe(clean_time_stamp_flight).eval(desc=desc,max_workers=max_workers)
+    res = traff.pipe(clean_time_stamp_flight).eval(
+        desc=desc, max_workers=max_workers
+    )
     return res
 
 
@@ -62,16 +86,17 @@ def create_scn_line(
     time_str = convert_time_delta_to_start_str(time)
     plane_id = f"AC{data['flight_id']}"
     line = f"{time_str} {command} {plane_id},"
+    heading = data["track"]
     if typecode:
         line += f" {data['aircraft']},"
-    line += f" {data['latitude']}, {data['longitude']}, {data['altitude']}, {data['groundspeed']}"
+    line += f" {data['latitude']}, {data['longitude']}, {heading}, {data['altitude']}, {data['groundspeed']}"
     return line
 
 
 def process_sub_chunk(chunk_df: pd.DataFrame) -> str:
     chunk_lines = []
     for _, row in chunk_df.iterrows():
-        command = "ADD" if row["first"] else "MOV"
+        command = "CRE" if row["first"] else "MOVE"
         type_code = row["first"]
         # You must define create_scn_line() appropriately.
         line = create_scn_line(command, row, type_code)
@@ -93,7 +118,9 @@ class Evaluator:
             self.gen_traff = self.gen_traff.assign_id().eval(
                 desc="Generating flight ids", max_workers=max_num_wrokers
             )
-        self.gen_traff = clean_time_stamp_traffic(self.gen_traff,max_workers= max_num_wrokers)
+        self.gen_traff = clean_time_stamp_traffic(
+            self.gen_traff, max_workers=max_num_wrokers
+        )
         self.ini_traff = ini_traff
         self.labels = labels
         self.seq_len = seq_len
@@ -127,25 +154,27 @@ class Evaluator:
         data = data.sort_values(by="timedelta", ascending=True)
         return data
 
-    # def scn_for_traff(self,scn_filename:str,traff:Traffic,chunck_size: int = 1000) -> None:
-    #     data = self.update_traff(traff)
-    #     chunck =""
-
-    #     with open(scn_filename,"w") as file:
-
-    #         for i,row in data.iterrows():
-    #             command = "ADD" if row["first"] else "MOV"
-    #             type_code = True if row["first"] else False
-    #             line = create_scn_line(command,row,i,type_code)
-    #             chunck += line + "\n"
-    #             if (i%chunck_size == 0):
-    #                 file.write(chunck)
-    #                 chunck = ""
-
-    def create_scn(self, scn_file_name: str):
+    def create_scn(self, scn_file_name: str) -> None:
         """
         Creates two scn files corresponding to the generated trajectories.
         Don't put the .scn at the end of the filename.
         """
         self.scn_for_traff(scn_file_name + "_generated.scn", self.gen_traff)
         self.scn_for_traff(scn_file_name + "_generated.scn", self.ini_traff)
+
+    def e_dist(self,n_t:int = None)->float:
+        """
+        Computes the e-distance between the generated traffic and the original traffic.
+        n controls the max number of trajectory considered
+        """
+        n,m = len(self.gen_traff),len(self.ini_traff)
+
+        
+
+        if n_t and (n_t > n or n_t > m):
+            n_t = min(n,m)
+        if not n_t:
+            return e_distance()
+        
+    def flight_navpoints_simulation(f: Flight)->Flight:
+        pass

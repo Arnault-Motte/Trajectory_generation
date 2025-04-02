@@ -59,7 +59,7 @@ class Displayer:
 
         with plt.style.context("traffic"):
             fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
-            traffic.plot(ax, alpha=0.7, color="#4c78a8")
+            traffic.plot(ax, alpha=0.2, color="#4c78a8")
             plt.savefig(plot_path)
 
     def plot_compare_traffic(
@@ -142,6 +142,76 @@ class Displayer:
                 s=4,
                 c="blue",
                 label="Generated",
+            )
+            ax.title.set_text("Latent Space")
+            ax.legend()
+
+            plt.savefig(plt_path)
+
+        return 0
+    
+    def plot_latent_space_pseudo_inputs_selected(
+        self, num_point: int, model: VAE_TCN_Vamp, plt_path: str
+    ) -> int:
+        data = self.data_clean.clean_data()
+        train, _ = get_data_loader(data, 500, 0.8)
+        list_tensor = [batch[0] for batch in train]
+        all_tensor = torch.concat(list_tensor).to(
+            next(model.parameters()).device
+        )
+
+        all_tensor = all_tensor.permute(0, 2, 1)
+        pseudo_latent,_ = model.pseudo_inputs_latent()
+        pseudo_latent  = pseudo_latent.cpu().detach().numpy()
+
+        ## getting mu and sigma
+        mu, log_var = model.encoder(all_tensor)
+        scale = (log_var / 2).exp()
+        # get the actual distribution
+        distribution = Independent(Normal(mu, scale), 1)
+
+        posterior_samples = distribution.rsample()
+
+        prior_sample = model.sample_from_prior(num_point).squeeze(1)
+        print(f"posterior shape {posterior_samples.shape}")
+        print(f"prior shape : {prior_sample.shape}")
+
+        total = np.concat(
+            (
+                posterior_samples.cpu().detach().numpy(),
+                prior_sample.cpu().detach().numpy(),
+            ),
+            axis=0,
+        )
+
+        pca = PCA(n_components=2).fit(total[:-num_point])
+        embeded = pca.transform(total)
+        embedded_psuedo = pca.transform(pseudo_latent)
+
+        with plt.style.context("traffic"):
+            fig, ax = plt.subplots(1, figsize=(15, 10))
+
+            ax.scatter(
+                embeded[:-num_point, 0],
+                embeded[:-num_point, 1],
+                s=4,
+                c="grey",
+                label="True",
+            )
+            ax.scatter(
+                embeded[-num_point:, 0],
+                embeded[-num_point:, 1],
+                s=4,
+                c="blue",
+                label="Generated",
+            )
+
+            ax.scatter(
+                embedded_psuedo[:, 0],
+                embedded_psuedo[:, 1],
+                s=4,
+                c="orange",
+                label="Pseudo Inputs",
             )
             ax.title.set_text("Latent Space")
             ax.legend()
@@ -256,7 +326,6 @@ class Displayer:
     def plot_distribution_typecode(
         self, path1: str, path2: str, hist: bool = False
     ) -> None:
-        
         data = self.data_clean.basic_traffic_data
         if hist:
             path1 = path1.split(".")[0] + "_hist.png"
@@ -370,14 +439,11 @@ class Displayer:
         bounds: tuple[float, float] = (-2000, 2000),
         batch_size: int = 500,
     ) -> None:
- 
-      
         if hist:
             path1 = path1.split(".")[0] + "_hist.png"
             path2 = path2.split(".")[0] + "_hist.png"
 
-        labels_list =  self.data_clean.get_typecodes_labels()
-        print(labels_list)
+        labels_list = self.data_clean.get_typecodes_labels()
         self.generated_data_v_rates_to_be_displayed(
             model, number_of_point, bounds, labels_list, batch_size
         )
@@ -396,7 +462,7 @@ class Displayer:
         plt.title("Vertical Rate Distribution by Aircraft Typecode")
         plt.legend(title="Typecode")
         plt.savefig(path1)
-        plt.show
+        plt.show()
 
         # Define number of rows and columns
         rows, cols = 2, 5
@@ -431,9 +497,15 @@ class Displayer:
         plt.savefig(path2)
         plt.show()
 
-    def display_pseudo_inputs(self, model: CVAE_TCN_Vamp, path: str) -> None:
-        pseudo_in_rec = model.get_pseudo_inputs_recons()
-        traf = self.data_clean.output_converter(pseudo_in_rec)
+    def display_pseudo_inputs(
+        self,
+        model: CVAE_TCN_Vamp | VAE_TCN_Vamp,
+        path: str,
+        k: int = 1,
+        landings: bool = False,
+    ) -> None:
+        pseudo_in_rec = model.get_pseudo_inputs_recons()[::k, ...]
+        traf = self.data_clean.output_converter(pseudo_in_rec, landing=landings)
         self.plot_traffic(traf, plot_path=path)
 
     def plot_list_traff(
@@ -452,26 +524,28 @@ class Displayer:
             i = 0
             for traffic in l_traf:
                 traffic.plot(
-                    ax, alpha=0.7, color=color_list[i % len(color_list)]
+                    ax, alpha=0.3, color=color_list[i % len(color_list)]
                 )
                 i += 1
             plt.savefig(plot_path)
 
     def plot_vamp_generated(
         self,
-        model: CVAE_TCN_Vamp,
+        model: CVAE_TCN_Vamp | VAE_TCN_Vamp,
         path: str,
         index: int,
         num_traj: int,
+        landings: bool = False,
     ) -> None:
-        pseudo_in_rec = model.get_pseudo_inputs_recons()
+        used_model = model
+        pseudo_in_rec = used_model.get_pseudo_inputs_recons()
         chosen_pseudo = pseudo_in_rec[index]
 
-        gen_traj = model.generate_from_specific_vamp_prior(index, num_traj)
+        gen_traj = used_model.generate_from_specific_vamp_prior(index, num_traj)
         pseudo_traff = self.data_clean.output_converter(
-            chosen_pseudo.unsqueeze(0)
+            chosen_pseudo.unsqueeze(0), landing=landings
         )
-        gen_taff = self.data_clean.output_converter(gen_traj)
+        gen_taff = self.data_clean.output_converter(gen_traj, landing=landings)
 
         self.plot_list_traff([pseudo_traff, gen_taff], path)
 
@@ -739,6 +813,24 @@ class Displayer:
 
         self.plot_traffic(traf, plot_path=plot_path)
 
+    def plot_generated_VAE(
+        self,
+        model: VAE_TCN_Vamp,
+        plot_path: str,
+        num_point: int = 2000,
+        batch_size: int = 500,
+        take_off: bool = False,
+    ) -> None:
+
+        generated_point = model.sample(num_point, batch_size)
+
+        # print("|--Converting--|")
+        traf = self.data_clean.output_converter(
+            generated_point, landing=take_off
+        )
+
+        self.plot_traffic(traf, plot_path=plot_path)
+
     def plot_generated_label_dataset(
         self,
         model: CVAE_TCN_Vamp,
@@ -790,8 +882,7 @@ class Displayer:
         Compares the generated vertical rates with the true ones.
         """
 
-   
-        labels_list =self.data_clean.get_typecodes_labels()
+        labels_list = self.data_clean.get_typecodes_labels()
 
         if not self.type_code_vrate or regenerate:
             self.set_v_rates_per_typecode(labels_list)
@@ -925,3 +1016,5 @@ class Displayer:
             plt.tight_layout()
             plt.savefig(plt_path)
             plt.show()
+    
+    

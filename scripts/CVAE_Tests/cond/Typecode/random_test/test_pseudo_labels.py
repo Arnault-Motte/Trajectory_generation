@@ -22,7 +22,7 @@ from data_orly.src.generation.test_display import Displayer
 
 def main() -> int:
     print(sys.path)
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     ## Getting the data
 
@@ -48,7 +48,7 @@ def main() -> int:
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 1000 #*1.5
+    pseudo_input_num = 800 #*1.5
     patience = 30
     min_delta = -100
     labels_latent = 16
@@ -78,38 +78,21 @@ def main() -> int:
     ).to(device)
 
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
-    model.save_model(
-        "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct_cond_B738_A320_1000p.pth"
+    #model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
+    model.load_model(
+        "data_orly/src/generation/models/saved_weights/CVAE_TCN_Vampprior_take_off_7_vr_direct_cond_B738_A320.pth"
     )
 
     ## Testing reconstuction on one batch
 
-    x_recon, data_2 = model.reproduce_data(data, labels, 500, 2)
-    print(x_recon.shape, "\n")
-    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
-
-    traffic_f = data_cleaner.output_converter(x_recon)
-
-    traffic_f.data.to_pickle(
-        "data_orly/generated_traff/reproducted/CAE_TCN_Vamp_reproducted_traff_take_off_7_vr_direct_B738_A320_1000p.pkl"
-    )
-    # print(data_cleaner.first_n_flight_delta_time(traffic_f))
-
-    displayer.plot_distribution_typecode_label_generation(
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_1_B738_A320_1000p.png",
-        "data_orly/figures/vertical_rates_recons/CVAE_TCN_vamp_Recons_take_off_7_vr_direct_cond_2_B738_A320_1000p.png",
-        model,
-        hist=True,
-        bounds=(0, 4000),
-    )
-
-    # gen = Generator(model,data_cleaner)
-
-    # top_10 = [label for label,_ in data_cleaner.get_top_10_planes()]
-    # gen_traffic = gen.generate_n_flight_per_labels(top_10,2000)
-
-    # displayer.plot_traff_labels("data_orly/figures/generation/CVAE_Vamp_w_vr_B738_A320.png",gen_traffic,top_10)
+    pseudo_inputs = model.get_pseudo_labels()
+    print(pseudo_inputs.shape)
+    print(pseudo_inputs.cpu().numpy())
+    print("also")
+    print(model.get_pseudo_labels().cpu().numpy())
+    # print(data_cleaner.one_hot.transform(np.array(["B738","A320"]).reshape(-1,1)))
+    # inverse = data_cleaner.transform_back_labels_tensor(pseudo_inputs)
+    # print(inverse)
     return 0
 
 

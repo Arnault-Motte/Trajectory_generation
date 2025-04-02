@@ -68,14 +68,20 @@ def is_ascending(traff: Traffic) -> bool:
 
 
 def traffic_only_chosen(
-    traff: Traffic, chosen_typecodes: list[str], seq_len:int
+    traff: Traffic, chosen_typecodes: list[str], seq_len: int
 ) -> tuple[Traffic, list[str]]:
     data = traff.data
 
     typecodes = [flight.typecode for flight in traff]
-    data["typecode"] = [typecode for typecode in typecodes for _ in range(seq_len)]
+    data["typecode"] = [
+        typecode for typecode in typecodes for _ in range(seq_len)
+    ]
     num_typecodes = Counter(typecodes)
-    ordered_typecodes = [typecode for typecode, _ in num_typecodes.most_common()]
+    ordered_typecodes = [
+        typecode
+        for typecode, _ in num_typecodes.most_common()
+        if typecode in chosen_typecodes
+    ]
     filtered_data = data[data["typecode"].isin(chosen_typecodes)]
     new_traff = Traffic(filtered_data)
 
@@ -114,18 +120,22 @@ class Data_cleaner:
             )
 
         chosen_typecodes_temp = chosen_typecodes
+        
         # if we want to study specific aircrafts trajectories
         if len(chosen_typecodes) != 0:
-            self.basic_traffic_data,chosen_typecodes_temp = traffic_only_chosen(
-                self.basic_traffic_data, chosen_typecodes,seq_len=seq_len
+            self.basic_traffic_data, chosen_typecodes_temp = (
+                traffic_only_chosen(
+                    self.basic_traffic_data, chosen_typecodes, seq_len=seq_len
+                )
             )
-
+        print(chosen_typecodes_temp)
         # save the chose types and their order
         self.chosen_types = (
             chosen_typecodes_temp
             if len(chosen_typecodes) != 0
-            else [label for label,_ in self.get_top_10_planes()]
+            else [label for label, _ in self.get_top_10_planes()]
         )
+        print(self.chosen_types)
 
         self.columns = columns
         self.scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -491,6 +501,13 @@ class Data_cleaner:
             label for label in labels_order for _ in range(labels_count[label])
         ]
         return np.array(reordered_labels).reshape(-1, 1)
+
+    def transform_back_labels_tensor(
+        self, label_tensor: torch.Tensor
+    ) -> np.ndarray:
+        array = label_tensor.cpu().numpy()
+        inverse = self.one_hot.inverse_transform(array)
+        return inverse
 
 
 def filter_outlier(traff: Traffic) -> Traffic:

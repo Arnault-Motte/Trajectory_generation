@@ -46,7 +46,7 @@ def main() -> int:
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 800 #*1.5
+    pseudo_input_num = 1200 #*1.5
     patience = 30
     min_delta = -100
     labels_latent = 16
@@ -74,23 +74,42 @@ def main() -> int:
     ## Training the model
     model.fit(data, epochs=1000, lr=1e-3, batch_size=500)
     model.save_model(
-        "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_vr_direct_cond_B738.pth"
+        "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_vr_direct_cond_B738_1200p.pth"
     )
 
+    displayer.plot_vamp_generated(
+        model,
+        "data_orly/figures/generation/vamp/VAE_Vamp_w_vr_B738_1200p.png",
+        index=0,
+        num_traj=50,
+        landings=True,
+    )
+    displayer.display_pseudo_inputs(
+        model,
+        "data_orly/figures/generation/vamp/VAE_Vamp_w_vr_B738_all_1200p.png",
+        k=2,
+        landings=True,
+    )
+
+    
+
+    displayer.plot_latent_space(2000,model,"data_orly/figures/latent_spaces/VAE_Vamp_w_vr_B738_1200p.png")
+    displayer.plot_latent_space_pseudo_inputs_selected(800,model,"data_orly/figures/latent_spaces/VAE_Vamp_w_vr_B738_peudo_1200p.png")
+    displayer.plot_generated_VAE(model,'data_orly/figures/generation/VAE_gen/B738_1200p.png',2000,take_off=True)
     ## Testing reconstuction on one batch
 
-    x_recon, data_2 = model.reproduce_data(data, 500, 2)
-    print(x_recon.shape, "\n")
-    traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
+    # x_recon, data_2 = model.reproduce_data(data, 500, 2)
+    # print(x_recon.shape, "\n")
+    # traffic_init = data_cleaner.dataloader_traffic_converter(data_2, 2)
 
-    traffic_f = data_cleaner.output_converter(x_recon)
+    # traffic_f = data_cleaner.output_converter(x_recon)
 
-    displayer.plot_compare_traffic(traffic_init,traffic_f,2000,plot_path="data_orly/figures/generation/reocns_VAE_Vamp_w_vr_B738.png")
+    # displayer.plot_compare_traffic(traffic_init,traffic_f,2000,plot_path="data_orly/figures/generation/reocns_VAE_Vamp_w_vr_B738_1200p.png")
 
-    gen = Generator(None,data_cleaner,model)
+    # gen = Generator(None,data_cleaner,model)
 
-    traff = gen.generate_n_flight(2000,500)
-    displayer.plot_traffic(traffic=traff, plot_path="data_orly/figures/generation/VAE_Vamp_w_vr_B738.png")
+    # traff = gen.generate_n_flight(2000,500)
+    # displayer.plot_traffic(traffic=traff, plot_path="data_orly/figures/generation/VAE_Vamp_w_vr_B738_1200p.png")
     return 0
 
 

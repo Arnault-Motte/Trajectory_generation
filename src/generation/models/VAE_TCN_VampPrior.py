@@ -389,6 +389,7 @@ class VAE_TCN_Vamp(nn.Module):
         min_delta: float = -100.0,
         num_workers: int = 4,
         temp_name: str = "best_model.pth",
+        init_std:float = 1.0,
     ):
         super(VAE_TCN_Vamp, self).__init__()
 
@@ -423,7 +424,7 @@ class VAE_TCN_Vamp(nn.Module):
         self.seq_len = seq_len
         self.trained = False
         self.in_channels = in_channels
-        self.log_std = nn.Parameter(torch.Tensor([1]), requires_grad=True)
+        self.log_std = nn.Parameter(torch.Tensor([init_std]), requires_grad=True)
 
         self.prior_weights = nn.Parameter(
             torch.ones((1, pseudo_input_num)), requires_grad=True
@@ -663,7 +664,7 @@ class VAE_TCN_Vamp(nn.Module):
             generated_data = self.decode(z)
             samples.append(generated_data)
         final_samples = torch.cat(samples)
-        return final_samples
+        return final_samples.permute(0, 2, 1)
 
     def save_model(self, file_path: str) -> None:
         torch.save(self.state_dict(), file_path)
@@ -671,3 +672,33 @@ class VAE_TCN_Vamp(nn.Module):
     def load_model(self, weight_file_path: str) -> None:
         self.load_state_dict(torch.load(weight_file_path))
         self.trained = True
+    
+    def generate_from_specific_vamp_prior(
+        self, vamp_index: int, num_traj: int
+    ) -> torch.Tensor:
+        with torch.no_grad():
+            psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
+            chosen_mean = psuedo_means[vamp_index]
+            chosen_scale = (pseudo_scales[vamp_index] / 2).exp()
+            print(chosen_mean.shape)
+            print(chosen_scale.shape)
+
+            dist = distrib.Independent(
+                distrib.Normal(chosen_mean, chosen_scale), 1
+            )
+
+            sample = dist.sample(torch.Size([num_traj])).to(
+                next(self.parameters()).device
+            )
+            print(sample.shape)
+            generated_traj = self.decode(sample)
+
+        return generated_traj.permute(0, 2, 1)
+
+    def get_pseudo_inputs_recons(self) -> torch.Tensor:
+        with torch.no_grad():
+            pseudo_inputs = self.pseudo_inputs_layer.forward().permute(0, 2, 1)
+            output = self.forward(pseudo_inputs)[0].permute(
+                0, 2, 1
+            )
+        return output
