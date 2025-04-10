@@ -509,6 +509,10 @@ class Data_cleaner:
         inverse = self.one_hot.inverse_transform(array)
         return inverse
 
+    def return_flight_id_for_label(self, label : str) -> list[str]:
+        labels = [f.flight_id for f in self.basic_traffic_data if f.typecode == label]
+        return labels
+
 
 def filter_outlier(traff: Traffic) -> Traffic:
     def simple(flight: Flight) -> Flight:

@@ -11,6 +11,8 @@ from data_orly.src.core.early_stop import Early_stopping
 
 import numpy as np
 
+from traffic.core import tqdm
+
 
 # Creates a train and test dataloader from a numpy array.
 def get_data_loader(
@@ -497,7 +499,7 @@ class VAE_TCN_Vamp(nn.Module):
             else None
         )
 
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs),bar_format="{desc}: {percentage:3.0f}% | ETA: {remaining}"):
             total_loss = 0.0
             kl_div = 0.0
             total_mse = 0.0

@@ -1,7 +1,7 @@
 import datetime
 import multiprocessing as mp
 from collections import Counter
-from datetime import timedelta
+from datetime import timedelta,time
 
 import torch
 from scipy.spatial.distance import cdist, jensenshannon
@@ -29,7 +29,7 @@ DEFAULT_AIRCRAFT = "A320"
 
 
 def e_distance(
-    traj_gen_flt=np.ndarray, traj_og_flt=np.ndarray, metric:str="euclidean"
+    traj_gen_flt: np.ndarray, traj_og_flt: np.ndarray, metric: str = "euclidean"
 ) -> float:
     x = traj_gen_flt
     y = traj_og_flt
@@ -48,9 +48,8 @@ def e_distance(
     return e_distance
 
 
-def traff_to_flatten_array(traff : Traffic) -> np.ndarray:
+def traff_to_flatten_array(traff: Traffic) -> np.ndarray:
     traff_array = traff.data.to_numpy()
-    
 
 
 def convert_time_delta_to_start_str(time_delta: int) -> str:
@@ -102,6 +101,62 @@ def process_sub_chunk(chunk_df: pd.DataFrame) -> str:
         line = create_scn_line(command, row, type_code)
         chunk_lines.append(line)
     return "\n".join(chunk_lines)
+
+
+import traj_dist.distance as tdist
+
+
+def reset_timestamp(traff: Traffic, date_og: datetime) -> Traffic:
+    """
+    Reset the timestamp of the traffic to at date_og
+    """
+    traff_data = traff.data
+    traff_data["timestamp"] = (
+        pd.to_timedelta(traff_data["timedelta"], unit="s") + date_og
+    )
+    traffic = Traffic(traff_data)
+    return traffic
+
+
+def compute_distances(
+    traff: Traffic, simulated_traff: Traffic, num_point: int
+) -> dict:
+    """
+    Computes the different distances between two traffs
+    """
+    from cartopy.crs import EuroPP
+
+    traff = traff.compute_xy(EuroPP())
+    simulated_traff = simulated_traff.compute_xy(EuroPP())
+
+    traff = reset_timestamp(traff, simulated_traff.data["timestamp"].iloc[0])
+    simulated_traff = reset_timestamp(
+        simulated_traff, traff.data["timestamp"].iloc[0]
+    )
+    ret = {}
+    for f2 in tqdm(simulated_traff):
+        flight_id = f2.flight_id
+        f1 = traff[flight_id]
+        f1 = f1.drop_duplicates(subset="timestamp")  # the data is sometimes bad
+        f1 = f1.before(f2.stop)
+        f2 = f2.before(f1.stop)  # we want the flight to have the same duration
+
+        # print(f1.resample(num_point).data[["x", "y"]].reset_index(drop=True).head())
+        X1, X2 = (
+            f1.resample(num_point).data[["x", "y"]].to_numpy(),
+            f2.resample(num_point).data[["x", "y"]].to_numpy(),
+        )
+        ret[flight_id] = {
+            "dtw": tdist.dtw(X1, X2),
+            "edr": tdist.edr(X1, X2),
+            "erp": tdist.erp(X1, X2),
+            "frechet": tdist.frechet(X1, X2),
+            "hausdorff": tdist.hausdorff(X1, X2),
+            "lcss": tdist.lcss(X1, X2),
+            "sspd": tdist.sspd(X1, X2),
+        }
+
+    return ret
 
 
 class Evaluator:
@@ -162,19 +217,32 @@ class Evaluator:
         self.scn_for_traff(scn_file_name + "_generated.scn", self.gen_traff)
         self.scn_for_traff(scn_file_name + "_generated.scn", self.ini_traff)
 
-    def e_dist(self,n_t:int = None)->float:
+    def e_dist(self, n_t: int = None) -> float:
         """
         Computes the e-distance between the generated traffic and the original traffic.
         n controls the max number of trajectory considered
         """
-        n,m = len(self.gen_traff),len(self.ini_traff)
-
-        
+        n, m = len(self.gen_traff), len(self.ini_traff)
 
         if n_t and (n_t > n or n_t > m):
-            n_t = min(n,m)
-        if not n_t:
-            return e_distance()
-        
-    def flight_navpoints_simulation(f: Flight)->Flight:
+            n_t = min(n, m)
+
+        return e_distance(
+            convert_traff_numpy(self.gen_traff),
+            convert_traff_numpy(self.ini_traff),
+        )
+    
+    def compute_e_dist(self,number_of_trail:int = 100,n_t = 3000):
         pass
+
+    def flight_navpoints_simulation(f: Flight) -> Flight:
+        pass
+
+
+def convert_traff_numpy(
+    traff: Traffic,
+    columns: list[str] = ["groundspeed", "track", "timedelta", "vertical_rate"],
+) -> np.ndarray:
+    data = traff.data[columns]
+    array = data.to_numpy()
+    return array

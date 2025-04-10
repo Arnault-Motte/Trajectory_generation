@@ -27,15 +27,15 @@ from data_orly.src.generation.data_process import (
 
 
 class Generator:
-    def __init__(self,model:CVAE_TCN_Vamp, data_clean:Data_cleaner, model_v:VAE_TCN_Vamp = None)-> None:
-        self.model = model if model is not None else model_v
+    def __init__(self,model:CVAE_TCN_Vamp|VAE_TCN_Vamp, data_clean:Data_cleaner)-> None:
+        self.model = model 
         self.data_clean = data_clean
         self.cond = model is not None
     
     def generate_n_flight(self,n_points:int,batch_size:int = 500) ->Traffic:
         model = self.model
         sampled = model.sample(num_samples=n_points,batch_size= batch_size)
-        sampled = sampled.permute(0, 2, 1) 
+        #sampled = sampled.permute(0, 2, 1) 
         traf = self.data_clean.output_converter(sampled,landing=True)
         return traf
 
