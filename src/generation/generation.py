@@ -27,25 +27,35 @@ from data_orly.src.generation.data_process import (
 
 
 class Generator:
-    def __init__(self,model:CVAE_TCN_Vamp|VAE_TCN_Vamp, data_clean:Data_cleaner)-> None:
-        self.model = model 
+    def __init__(
+        self, model: CVAE_TCN_Vamp | VAE_TCN_Vamp, data_clean: Data_cleaner
+    ) -> None:
+        self.model = model
         self.data_clean = data_clean
         self.cond = model is not None
-    
-    def generate_n_flight(self,n_points:int,batch_size:int = 500) ->Traffic:
+
+    def generate_n_flight(
+        self, n_points: int, batch_size: int = 500, lat_long: bool = True
+    ) -> Traffic:
         model = self.model
-        sampled = model.sample(num_samples=n_points,batch_size= batch_size)
-        #sampled = sampled.permute(0, 2, 1) 
-        traf = self.data_clean.output_converter(sampled,landing=True)
+        sampled = model.sample(num_samples=n_points, batch_size=batch_size)
+        # sampled = sampled.permute(0, 2, 1)
+        traf = self.data_clean.output_converter(
+            sampled, landing=True, lat_lon=lat_long
+        )
         return traf
 
-
-
-    def generate_n_flight_per_labels(self,labels: list[str],n_points:int,batch_size:int = 500)-> list[Traffic]:
+    def generate_n_flight_per_labels(
+        self,
+        labels: list[str],
+        n_points: int,
+        batch_size: int = 500,
+        lat_long: bool = True,
+    ) -> list[Traffic]:
         model = self.model
         traff_list = []
-        for label in tqdm(labels,desc='Generation'):
-             with tqdm(total=4, desc=f"Processing {label}") as pbar:
+        for label in tqdm(labels, desc="Generation"):
+            with tqdm(total=4, desc=f"Processing {label}") as pbar:
                 labels_array = np.full(batch_size, label).reshape(-1, 1)
                 transformed_label = self.data_clean.one_hot.transform(
                     labels_array
@@ -60,7 +70,9 @@ class Generator:
                 sampled = model.sample(n_points, batch_size, labels_final)
                 pbar.update(1)
 
-                traf = self.data_clean.output_converter(sampled,landing=True)
+                traf = self.data_clean.output_converter(
+                    sampled, landing=True, lat_long=lat_long
+                )
                 pbar.update(1)
                 traff_list.append(traf)
 

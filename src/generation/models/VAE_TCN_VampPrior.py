@@ -652,7 +652,6 @@ class VAE_TCN_Vamp(nn.Module):
         distrib = create_mixture(
             mu, log_var, vamp_weight=self.prior_weights.squeeze(0)
         )
-        print(mu.shape, log_var.shape, self.prior_weights.shape)
         samples = distrib.sample((num_sample,))
         return samples
 

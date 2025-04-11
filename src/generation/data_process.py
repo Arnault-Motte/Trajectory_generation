@@ -214,7 +214,7 @@ class Data_cleaner:
         )
 
     def output_converter(
-        self, x_recon: torch.Tensor, landing: bool = False
+        self, x_recon: torch.Tensor, landing: bool = False, lat_lon:bool = True
     ) -> Traffic:
         mean_point = (
             self.get_mean_end_point()
@@ -242,14 +242,16 @@ class Data_cleaner:
             "timedelta"
         ].apply(lambda x: datetime.timedelta(seconds=x))
         x_df["icao24"] = [str(i // self.seq_len) for i in range(len(x_df))]
+        x_df["callsign"] = x_df["icao24"]
 
-        x_df = compute_latlon_from_trackgs(
+        if lat_lon:
+            x_df = compute_latlon_from_trackgs(
             x_df,
             n_samples=batch_size,
             n_obs=self.seq_len,
             coordinates=coordinates,
             forward=landing,
-        )
+            )
         return Traffic(x_df)
 
     def is_ascedending_per_traffic(self) -> list[bool]:
