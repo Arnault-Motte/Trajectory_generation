@@ -59,7 +59,7 @@ def convert_time_delta_to_start_str(time_delta: int) -> str:
 
 def clean_time_stamp_flight(flight: Flight) -> Flight:
     """
-    If the first timedelta is inferior to 0 it adds it to all timedeltas in order to only have positive timedeltas values
+    If the first timedelta is inferior to 0, adds its oposite to all timedeltas to have positive timedeltas.
     """
     data = flight.data
     data = data.reset_index()
@@ -183,39 +183,6 @@ class Evaluator:
             max_num_wrokers if max_num_wrokers > 0 else mp.cpu_count()
         )
 
-    def scn_for_traff(
-        self, scn_filename: str, traff: Traffic, chunck_size: int = 1000
-    ) -> None:
-        data = self.update_traff(traff)
-        chunck_num = len(data) // chunck_size
-        data_list = np.array_split(data, chunck_num)
-
-        with open(scn_filename, "w") as file:
-            for data_i in tqdm(data_list, desc="writing"):
-                sub_chunk = np.array_split(data_i, self.max_num_workers)
-                with mp.Pool(self.max_num_workers) as pool:
-                    res = pool.map(process_sub_chunk, sub_chunk)
-                final = "\n".join(res)
-                file.write(final)
-
-    def update_traff(self, traff: Traffic) -> pd.DataFrame:
-        seq_len = self.seq_len
-        data = traff.data
-        cd = data.index % seq_len == 0
-        data["first"] = False
-        data.loc[cd & (data["timedelta"] < 0), "timedelta"] = 0
-        data.loc[cd, "first"] = True
-        data["aircraft"] = [self.labels[i // seq_len] for i in range(len(data))]
-        data = data.sort_values(by="timedelta", ascending=True)
-        return data
-
-    def create_scn(self, scn_file_name: str) -> None:
-        """
-        Creates two scn files corresponding to the generated trajectories.
-        Don't put the .scn at the end of the filename.
-        """
-        self.scn_for_traff(scn_file_name + "_generated.scn", self.gen_traff)
-        self.scn_for_traff(scn_file_name + "_generated.scn", self.ini_traff)
 
     def e_dist(self, n_t: int = None) -> float:
         """

@@ -21,6 +21,10 @@ def get_data_loader(
     shuffle: bool = True,
     num_worker: int = 4,
 ) -> tuple[DataLoader, DataLoader]:
+    """
+    Returns a train and a val dataloader for the data in entry.
+    """
+
     data2 = torch.tensor(data, dtype=torch.float32)
     labels_tensor = torch.tensor(labels, dtype=torch.float32)
     dataset = TensorDataset(data2, labels_tensor)
@@ -42,12 +46,18 @@ def get_data_loader(
 # %%
 # MSE loss for reconstruction
 def reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
+    """
+    Basic MSE loss
+    """
     return F.mse_loss(x_recon, x, reduction="sum")
 
 
-def negative_log_likehood(
+def negative_log_likelihood(
     x: torch.Tensor, recon: torch.Tensor, scale: torch.Tensor
 ) -> torch.Tensor:
+    """
+    Computes the negative log likelyhood for the given scalar scale.
+    """
     mu = recon
     dist = distrib.Normal(mu, scale)
     log_likelihood = dist.log_prob(x)
@@ -56,6 +66,10 @@ def negative_log_likehood(
 
 # Normal KL loss for gaussian prior
 def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the KL loss for the given parameters and the standard normal
+    law.
+    """
     var = torch.exp(logvar)
     kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - var)
     return kl_divergence
@@ -64,6 +78,12 @@ def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
 def create_mixture(
     mu: torch.Tensor, log_var: torch.Tensor, vamp_weight: torch.Tensor
 ) -> distrib.MixtureSameFamily:
+    """
+    Creates a mixture of gaussian, using the log_var an mu tensor in entry.
+    Each batch dim of mu and log_var must represent a component of the GMM.
+    The Weights contol the importance of each component.
+    """
+
     n_components = mu.size(0)
     if torch.isnan(mu).any():
         print("NaN detected in mu")
@@ -84,6 +104,9 @@ def create_mixture(
 def create_distrib_posterior(
     mu: torch.Tensor, log_var: torch.Tensor
 ) -> distrib.Distribution:
+    """
+    Returns the gaussian posterior
+    """
     return distrib.Independent(distrib.Normal(mu, (log_var / 2).exp()), 1)
 
 
@@ -95,6 +118,9 @@ def vamp_prior_kl_loss(
     pseudo_log_var: torch.Tensor,
     vamp_weight: torch.Tensor,
 ) -> torch.Tensor:
+    """
+    Computes the kl loss for the vamp_prior implementation
+    """
     prior = create_mixture(pseudo_mu, pseudo_log_var, vamp_weight)
     posterior = create_distrib_posterior(mu, log_var)
     log_prior = prior.log_prob(z)
@@ -115,7 +141,11 @@ def VAE_vamp_prior_loss(
     vamp_weight: torch.Tensor = None,
     beta: float = 1,
 ) -> torch.Tensor:
-    recon_loss = negative_log_likehood(x, x_recon, scale)
+    """
+    ELBO for the VampPrior implementations
+    """
+
+    recon_loss = negative_log_likelihood(x, x_recon, scale)
     # Compute KL divergence
     batch_size = x.size(0)
     kl_loss = vamp_prior_kl_loss(
@@ -126,6 +156,11 @@ def VAE_vamp_prior_loss(
 
 # Basic TCN blocks
 class TCNBlock(nn.Module):
+    """
+    Basic TCN block. Object represents a single conv layer,
+    with a relu activation (active or not), and dropout.
+    Deals with padding.
+    """
     def __init__(
         self,
         in_channels: int,
@@ -165,6 +200,9 @@ class TCNBlock(nn.Module):
 
 # Residual TCN block
 class TCN_residual_block(nn.Module):
+    """
+    A complete residual block formed of 2 TCN Blocks
+    """
     def __init__(
         self,
         in_channels: int,
@@ -214,6 +252,10 @@ class TCN_residual_block(nn.Module):
 
 # TCN formed of n_block blocks
 class TCN(nn.Module):
+    """
+    A full TCN architecture.
+    Composed of successive TCN residual blocks.
+    """
     def __init__(
         self,
         initial_channels: int,
@@ -265,6 +307,10 @@ class TCN(nn.Module):
 
 ## Encoder
 class TCN_encoder(nn.Module):
+    """
+    VAE encoder using TCN. The number of TCN blocks
+    can be adjusted.
+    """
     def __init__(
         self,
         inital_channels: int,
@@ -309,6 +355,10 @@ class TCN_encoder(nn.Module):
 
 ## Decoder
 class TCN_decoder(nn.Module):
+    """
+    VAE decoder unsing TCNs. The number of TCN blocks
+    can be adjusted.
+    """
     def __init__(
         self,
         in_channels: int,
@@ -354,6 +404,10 @@ class TCN_decoder(nn.Module):
 
 # VampPrior Pseudo inputs generator
 class Pseudo_inputs_generator(nn.Module):
+    """
+    Model used to generate the pseudo inputs.
+    Is formed of two fully connected layers.
+    """
     def __init__(
         self,
         number_of_channels: int,
@@ -387,6 +441,11 @@ class Pseudo_inputs_generator(nn.Module):
 
 
 class Pseudo_labels_generator(nn.Module):
+    """
+    Model used to generate the pseudo labels.
+    Formed of two fully connected layers.
+    Used for CVAEs using VampPrior.
+    """
     def __init__(
         self, label_dim: int, pseudo_inputs_num: int, dropout: float
     ) -> None:
@@ -410,6 +469,10 @@ class Pseudo_labels_generator(nn.Module):
 
 
 class Label_mapping(nn.Module):
+    """
+    Model use to map the labels to the expected 
+    latent dim.
+    """
     def __init__(
         self,
         one_hot: bool,
@@ -432,6 +495,10 @@ class Label_mapping(nn.Module):
 
 
 class Weight_Prior_Conditioned(nn.Module):
+    """
+    Model used to learn the weights of the prior components
+    weights based on the label. Used for CVAE with a conditioned VampPrior.
+    """
     def __init__(self, num_pseudo_inputs: int, labels_dim: int) -> None:
         super(Weight_Prior_Conditioned, self).__init__()
         self.num_pseudo_inputs = num_pseudo_inputs
@@ -444,6 +511,10 @@ class Weight_Prior_Conditioned(nn.Module):
 
 # Model
 class CVAE_TCN_Vamp(nn.Module):
+    """
+    CVAE with a VampPrior.
+    The user can control if the prior is conditioned or not.
+    """
     def __init__(
         self,
         in_channels: int,
@@ -534,11 +605,17 @@ class CVAE_TCN_Vamp(nn.Module):
         self.min_delta = min_delta
 
     def is_conditioned(self) -> bool:
+        """
+        Returns true if the prior is conditioned
+        """
         return self.prior_weights_layers is not None
 
     def encode(
         self, x: torch.Tensor, label: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Encodes the data x in entry to train the model"
+        """
         if label is None:
             label = torch.zeros(x.size(0), 1, self.seq_len).to(
                 next(self.parameters()).device
@@ -550,6 +627,10 @@ class CVAE_TCN_Vamp(nn.Module):
         return mu, log_var
 
     def pseudo_inputs_latent(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns the mean and log variance associated with each
+        pseudo input.
+        """
         conditioned = self.is_conditioned()
         pseudo_labels = (
             self.pseudo_labels_layer.forward() if conditioned else None
@@ -561,16 +642,25 @@ class CVAE_TCN_Vamp(nn.Module):
     def reparametrize(
         self, mu: torch.Tensor, log_var: torch.Tensor
     ) -> torch.Tensor:
+        """
+        Performs the reparametrization trick.
+        """
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return mu + eps * std
 
     def decode(self, z: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
+        """
+        Generates the output from the sampled vector and the chosen label.
+        """
         label = self.labels_decoder_broadcast(label)
         x = self.decoder(z, label)
         return x
 
     def get_prior_weight(self, labels: torch.Tensor = None) -> torch.Tensor:
+        """
+        Returns the weights of each component of the prior.
+        """
         if self.prior_weights_layers and not labels:
             raise ValueError(
                 "The prior need to be conditioned, please properly enter the labels when getting the prior weights"
@@ -614,6 +704,10 @@ class CVAE_TCN_Vamp(nn.Module):
         step_size: int = 200,
         gamma: float = 0.5,
     ) -> None:
+        """
+        Fits the model to the data x in entry of the function. Early stopping is
+        always activated.
+        """
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=lr)
         dataloader_train, data_loader_val = get_data_loader(
@@ -726,6 +820,10 @@ class CVAE_TCN_Vamp(nn.Module):
         self.trained = True
 
     def reproduce(self, x: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        Performs the forward path for the provided x and label.
+        Returns the reconstructed trajectories in a tensor.
+        """
         if not self.trained:
             raise Exception("Model not trained yet")
         self.eval()
@@ -734,6 +832,10 @@ class CVAE_TCN_Vamp(nn.Module):
     def compute_val_loss(
         self, val_data: DataLoader
     ) -> tuple[float, float, float]:
+        """
+        Computes the validation loss.
+        Returns in order : the total loss, the kl div and the mse
+        """
         total_loss = 0.0
         kl_div = 0.0
         total_mse = 0.0
@@ -782,6 +884,11 @@ class CVAE_TCN_Vamp(nn.Module):
         batch_size: int,
         n_batch: int,
     ) -> tuple[torch.Tensor, DataLoader]:
+        """
+        Generate the reproducted trajectories for every 
+        trajectory of data.
+        Also returns the data_loader used
+        """
         if not self.trained:
             raise Exception("Model not trained yet")
         data1, _ = get_data_loader(
@@ -807,9 +914,14 @@ class CVAE_TCN_Vamp(nn.Module):
         return reproduced_data, data1
 
     def sample_from_prior(
-        self, num_sample: int = 1, labels: torch.Tensor = None
+        self, num_sample: int = 1
     ) -> torch.Tensor:
+        """
+        Samples random points from the unconditioned prior
+        """
         # getting the prior
+        if self.is_conditioned():
+            raise SyntaxError("You can't sample with this function if your model uses a conditioned prior")
         with torch.no_grad():
             mu, log_var = self.pseudo_inputs_latent()
 
@@ -822,7 +934,9 @@ class CVAE_TCN_Vamp(nn.Module):
     def sample_from_conditioned_prior(
         self, num_sample: int = 1, label: torch.Tensor = None
     ) -> torch.Tensor:
-        # getting the prior
+        """
+        Samples random points from the conditioned prior
+        """
         with torch.no_grad():
             prior_weights = (
                 self.prior_weights_layers(label)
@@ -845,6 +959,9 @@ class CVAE_TCN_Vamp(nn.Module):
     def sample(
         self, num_samples: int, batch_size: int, labels: torch.Tensor
     ) -> torch.Tensor:
+        """
+        Generates num_samples trajectory from the VAE
+        """
         self.eval()
         device = next(self.parameters()).device
         samples = []
@@ -861,13 +978,22 @@ class CVAE_TCN_Vamp(nn.Module):
         return final_samples.permute(0, 2, 1)
 
     def save_model(self, file_path: str) -> None:
+        """
+        Saves the model weights
+        """
         torch.save(self.state_dict(), file_path)
 
     def load_model(self, weight_file_path: str) -> None:
+        """
+        Loads the model weights
+        """
         self.load_state_dict(torch.load(weight_file_path))
         self.trained = True
 
     def get_pseudo_inputs_recons(self) -> torch.Tensor:
+        """
+        Returns the trajectory generated from each pseudo_inputs.
+        """
         with torch.no_grad():
             pseudo_labels = self.pseudo_labels_layer.forward()
             pseudo_inputs = self.pseudo_inputs_layer.forward().permute(0, 2, 1)
@@ -879,6 +1005,10 @@ class CVAE_TCN_Vamp(nn.Module):
     def generate_from_specific_vamp_prior(
         self, vamp_index: int, num_traj: int
     ) -> torch.Tensor:
+        """
+        Generates a flux of trajectory from a single vamp prior.
+        The pseudo input used is indicated but its index.
+        """
         with torch.no_grad():
             psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
             chosen_mean = psuedo_means[vamp_index]
@@ -903,6 +1033,9 @@ class CVAE_TCN_Vamp(nn.Module):
         return generated_traj.permute(0, 2, 1)
 
     def get_pseudo_labels(self)-> torch.Tensor:
+        """
+        Returns the pseudo labels.
+        """
         self.eval()
         with torch.no_grad():
             return self.pseudo_labels_layer.forward()

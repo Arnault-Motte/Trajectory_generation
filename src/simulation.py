@@ -13,6 +13,7 @@ import csv
 START = "0:00:00>"
 
 
+# -----Code retaken from Thimothé Krauth : https://github.com/kruuZHAW/deep-traffic-generation-paper.git
 def aligned_stats(traj: "Flight") -> Optional[pd.DataFrame]:
     navaids_extent = navaids.extent(traj, buffer=0.1)
     if navaids_extent is None:
@@ -155,6 +156,12 @@ def navpoints_table(flight: "Flight") -> Optional["Flight"]:
     )
 
 
+# --- End of retaken code
+
+
+# --- Code to create bluesky SCN files
+
+
 def lvnav(acid: str) -> str:
     """
     Return the LNAV VNAV instructions as a scenario command
@@ -183,17 +190,26 @@ def cre(
 
 
 def init_log(log_name: str, file_name: str, log_time: int) -> str:
-    line = START + f"CRELOG {log_name} 10 {file_name} \n"
+    """
+    Returns the command used to initiate a logger.
+    """
+    line = START + f"CRELOG {log_name} {log_time} {file_name} \n"
     line += START + f"{log_name} ADD lat, lon, alt, cas \n"
     line += START + f"{log_name} ON \n"
     return line
 
 
 def defwpt(wpt_name: str, lat: float, lon: float, type: str = "FIX") -> str:
+    """
+    Defining a waypoint
+    """
     return START + f"DEFWPT {wpt_name} {lat} {lon} {type} \n"
 
 
 def addwpt(acid: str, wpt_name: str, alt: float, groundspeed: float) -> str:
+    """
+    Command to add the wpt to the route of the aircraft
+    """
     return START + f"ADDWPT {acid} {wpt_name}, {alt}, {groundspeed} \n"
 
 
@@ -399,23 +415,30 @@ def launch_simulation(
         if len(buffer) != 0:
             writer.writerows(buffer)
 
-
     return
 
-def compute_alt(traff:Traffic,init_alt :float):
+
+def compute_alt(traff: Traffic, init_alt: float) -> Traffic:
     """
     Compute the altitude at every time_stamp thanks to the vertical
     rate and the altitude at t =0.
     """
     data = traff.data
-    data["altitude"] = init_alt + data["vertical_rate"]*(data["timedelta"]/60)
+    data["altitude"] = init_alt + data["vertical_rate"] * (
+        data["timedelta"] / 60
+    )
     return Traffic(data)
 
+
 class Simulator:
-    def __init__(self, traff: Traffic,initial_alt: int = 500):
+    """
+    Object to be used for launching a simulation. Can create scn files, and interpret logged files.
+    """
+
+    def __init__(self, traff: Traffic, initial_alt: int = 500):
         self.traff = traff.aircraft_data()
         if "altitude" not in self.traff.data.columns:
-            self.traff = compute_alt(self.traff,initial_alt)
+            self.traff = compute_alt(self.traff, initial_alt)
         self.set_nave = set()
 
     def max_dt(self) -> int:
@@ -443,6 +466,19 @@ class Simulator:
         t_data["duration"] = pd.to_timedelta(t_data["duration"])
         t = Traffic(t_data)
         return t
+
+    def full_test(self, path: str, log_f_name: str, log_time: int) -> Traffic:
+        """
+        Creates the scn file, then simulate the traff, and returns the traffic simulated.
+        Can take a long time to run
+        """
+
+        self.scenario_create(path, log_f_name, log_time)
+        launch_simulation(path, log_f_name, log_time)
+        traff = self.read_csv_log_file(
+            log_f_name, path.split(".")[0] + "_denied_flight.pkl"
+        )
+        return traff
 
     def scenario_create(
         self,

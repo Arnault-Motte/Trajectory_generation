@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
 from numpy._typing._array_like import NDArray
+from tqdm import tqdm
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
@@ -98,17 +99,23 @@ class Data_cleaner:
         airplane_types_num: int = -1,
         chosen_typecodes: list[str] = [],
         total: bool = False,
+        traff: Traffic = None,
     ):
         # Check if we have any filename provided
-        if len(file_names) == 0 and not file_name:
+        if len(file_names) == 0 and not file_name and traff is None:
             raise ValueError("file_name and file_names are both None")
 
         # Creating the data from one or several files
-        self.basic_traffic_data = (
-            Traffic.from_file(file_name).aircraft_data()
-            if file_name
-            else traffic_random_merge(file_names, total)
-        )
+
+        if traff is not None:
+            self.basic_traffic_data = traff.aircraft_data()
+        elif file_name:
+            self.basic_traffic_data = Traffic.from_file(
+                file_name
+            ).aircraft_data()
+        else:
+            self.basic_traffic_data = traffic_random_merge(file_names, total)
+
         self.file_names = file_names
         self.total = total
 
@@ -120,7 +127,7 @@ class Data_cleaner:
             )
 
         chosen_typecodes_temp = chosen_typecodes
-        
+
         # if we want to study specific aircrafts trajectories
         if len(chosen_typecodes) != 0:
             self.basic_traffic_data, chosen_typecodes_temp = (
@@ -509,9 +516,29 @@ class Data_cleaner:
         inverse = self.one_hot.inverse_transform(array)
         return inverse
 
-    def return_flight_id_for_label(self, label : str) -> list[str]:
-        labels = [f.flight_id for f in self.basic_traffic_data if f.typecode == label]
+    def return_flight_id_for_label(self, label: str) -> list[str]:
+        labels = [
+            f.flight_id for f in self.basic_traffic_data if f.typecode == label
+        ]
         return labels
+
+
+def return_traff_per_typecode(
+    traff: Traffic, typecodes: list[str], max_worker: int = 2
+) -> list[Traffic]:
+    """
+    Returns a list of traff, where each traff
+    contains only aircraft of the corresponding label
+    in typecodes
+    """
+    
+    traff = traff.aircraft_data()
+    traffs_l = []
+    print(typecodes)
+    for typecode in tqdm(typecodes,desc="test"):
+        traff_i = traff.query(f'typecode == "{typecode}"')
+        traffs_l.append(traff_i)
+    return traffs_l
 
 
 def filter_outlier(traff: Traffic) -> Traffic:
@@ -605,3 +632,31 @@ def jason_shanon(vr_rates_1: np.ndarray, vr_rates_2: np.ndarray) -> float:
     # Compute KL Divergence
     js_div = jensenshannon(p, q)  # KL(P || Q)
     return js_div
+
+
+def save_smaller_traffic(
+    traff: Traffic, save_path: str, sizes: list[int] = [200, 500]
+) -> None:
+    """
+    Creat subsamples of traff of sizes sizes.
+    Saves them in save path which must be a path to a pkl file.
+    """
+
+    n = len(traff)
+
+    for nf in sizes:
+        if nf > n:
+            print(f"{nf} is bigger than the size of the traff")
+            continue
+        path = save_path.split(".")[0] + f"_{nf}.pkl"
+        print(path)
+        sampled = traff.sample(nf)
+        sampled.to_pickle(path)
+
+    return
+
+
+def combine_save(traffs: list[Traffic], path: str) -> None:
+    final_traff: Traffic = sum(traffs)
+    final_traff.to_pickle(path)
+    return
