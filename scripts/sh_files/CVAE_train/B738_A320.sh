@@ -1,0 +1,1 @@
+uv run python data_orly/scripts/script_train/train_CVAE.py --data data_orly/data/takeoffs_LFPO_07.pkl --weights data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_B738_A320_200.pth --typecodes B738 A320 --num_flights -1 200 --data_save data_orly/data/sampled_data/combined_data/B738_A320_200 --cuda 2 --scale 1

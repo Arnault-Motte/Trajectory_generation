@@ -3,255 +3,16 @@ import torch.distributions as distrib
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn.utils import weight_norm
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader
 
 from data_orly.src.core.early_stop import Early_stopping
+from data_orly.src.core.networks import *
+from data_orly.src.core.loss import *
 
 import numpy as np
 
 from traffic.core import tqdm
-
-
-# Creates a train and test dataloader from a numpy array.
-def get_data_loader(
-    data: np.ndarray, batch_size: int, train_split: float = 0.8, num_worker=4
-) -> tuple[DataLoader, DataLoader]:
-    data2 = torch.tensor(data, dtype=torch.float32)
-    dataset = TensorDataset(data2)
-    train_size = int(train_split * len(dataset))
-    test_size = len(dataset) - train_size
-    train_data, val_data = random_split(dataset, [train_size, test_size])
-    train_loader = DataLoader(
-        train_data, batch_size=batch_size, shuffle=True, num_workers=num_worker
-    )
-    test_loader = DataLoader(
-        val_data, batch_size=batch_size, shuffle=True, num_workers=num_worker
-    )
-    return train_loader, test_loader
-
-
-# %%
-# MSE loss for reconstruction
-def reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
-    return F.mse_loss(x_recon, x, reduction="sum")
-
-
-def negative_log_likehood(
-    x: torch.Tensor, recon: torch.Tensor, scale: torch.Tensor
-) -> torch.Tensor:
-    mu = recon
-    dist = distrib.Normal(mu, scale)
-    log_likelihood = dist.log_prob(x)
-    return -log_likelihood.sum(dim=[i for i in range(1, len(x.size()))])
-
-
-# Normal KL loss for gaussian prior
-def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-    var = torch.exp(logvar)
-    kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - var)
-    return kl_divergence
-
-
-def create_mixture(
-    mu: torch.Tensor, log_var: torch.Tensor, vamp_weight: torch.Tensor
-) -> distrib.MixtureSameFamily:
-    n_components = mu.size(0)
-    if torch.isnan(mu).any():
-        print("NaN detected in mu")
-    if torch.isnan(log_var).any():
-        print("NaN detected in log_var")
-    dist = distrib.MixtureSameFamily(
-        distrib.Categorical(logits=vamp_weight),
-        component_distribution=distrib.Independent(
-            distrib.Normal(mu, (log_var / 2).exp()), 1
-        ),
-    )
-    return dist
-
-
-def create_distrib_posterior(
-    mu: torch.Tensor, log_var: torch.Tensor
-) -> distrib.Distribution:
-    return distrib.Independent(distrib.Normal(mu, (log_var / 2).exp()), 1)
-
-
-def vamp_prior_kl_loss(
-    z: torch.Tensor,
-    mu: torch.Tensor,
-    log_var: torch.Tensor,
-    pseudo_mu: torch.Tensor,
-    pseudo_log_var: torch.Tensor,
-    vamp_weight: torch.Tensor,
-) -> torch.Tensor:
-    prior = create_mixture(pseudo_mu, pseudo_log_var, vamp_weight)
-    posterior = create_distrib_posterior(mu, log_var)
-    log_prior = prior.log_prob(z)
-    log_posterior = posterior.log_prob(z)
-    return log_posterior - log_prior
-
-
-# Vamp prior loss
-def VAE_vamp_prior_loss(
-    x: torch.Tensor,
-    x_recon: torch.Tensor,
-    z: torch.Tensor,
-    mu: torch.Tensor,
-    logvar: torch.Tensor,
-    pseudo_mu: torch.Tensor,
-    pseudo_log_var: torch.Tensor,
-    scale: torch.Tensor = None,
-    vamp_weight: torch.Tensor = None,
-    beta: float = 1,
-) -> torch.Tensor:
-    recon_loss = negative_log_likehood(x, x_recon, scale)
-    # Compute KL divergence
-    batch_size = x.size(0)
-    kl_loss = vamp_prior_kl_loss(
-        z, mu, logvar, pseudo_mu, pseudo_log_var, vamp_weight
-    )
-    return recon_loss.mean() + beta * kl_loss.mean()
-
-
-# Basic TCN blocks
-class TCNBlock(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        stride: int,
-        dilation: int,
-        dropout: float,
-        active: bool = True,
-    ):
-        super(TCNBlock, self).__init__()
-        self.conv = weight_norm(
-            nn.Conv1d(
-                in_channels,
-                out_channels,
-                kernel_size=kernel_size,
-                stride=stride,
-                dilation=dilation,
-            )
-        )
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
-        self.left_padding = (kernel_size - 1) * dilation
-        self.active = active
-        self.init_weights()
-
-    def init_weights(self) -> None:
-        self.conv.weight.data.normal_(0, 0.01)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.pad(x, (self.left_padding, 0), "constant", 0)
-        x = self.conv(x)
-        x = self.relu(x) if self.active else x
-        x = self.dropout(x)
-        return x
-
-
-# Residual TCN block
-class TCN_residual_block(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        stride: int,
-        dilation: int,
-        dropout: float,
-        last: bool = False,
-    ):
-        super(TCN_residual_block, self).__init__()
-        self.tcn1 = TCNBlock(
-            in_channels, out_channels, kernel_size, stride, dilation, dropout
-        )
-        active = True if not last else False
-        self.tcn2 = TCNBlock(
-            out_channels,
-            out_channels,
-            kernel_size,
-            stride,
-            dilation,
-            dropout,
-            active=active,
-        )
-        self.downsample = (
-            nn.Conv1d(in_channels, out_channels, 1)
-            if in_channels != out_channels
-            else None
-        )  # we can't do it for the first block
-        # self.relu = nn.ReLU()
-        self.init_weights()
-
-    def init_weights(self) -> None:
-        if self.downsample is not None:
-            self.downsample.weight.data.normal_(0, 0.01)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        residual = x
-        out = self.tcn1(x)
-        out = self.tcn2(out)
-        if self.downsample:
-            residual = self.downsample(residual)
-        out = out + residual
-        # out = self.relu(out)
-        return out
-
-
-# TCN formed of n_block blocks
-class TCN(nn.Module):
-    def __init__(
-        self,
-        initial_channels: int,
-        latent_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        stride: int,
-        dilatation: int,
-        dropout: float,
-        nb_blocks: int,
-    ):
-        super(TCN, self).__init__()
-        self.first_block = TCN_residual_block(
-            initial_channels,
-            latent_channels,
-            kernel_size,
-            stride,
-            dilatation**0,
-            dropout,
-        )
-        self.layers = [
-            TCN_residual_block(
-                latent_channels,
-                latent_channels,
-                kernel_size,
-                stride,
-                dilatation ** (index + 1),
-                dropout,
-            )
-            for index in range(nb_blocks - 2)
-        ]
-        self.blocks = nn.Sequential(*self.layers)
-        self.last_block = TCN_residual_block(
-            latent_channels,
-            out_channels,
-            kernel_size,
-            stride,
-            dilatation ** (nb_blocks - 1),
-            dropout,
-            last=True,
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.first_block(x)
-        x = self.blocks(x)
-        x = self.last_block(x)
-        return x
-
 
 ## Encoder
 class TCN_encoder(nn.Module):
@@ -334,41 +95,6 @@ class TCN_decoder(nn.Module):
         x = self.upsample(x)
         x = self.tcn(x)
         return x
-
-
-# VampPrior Pseudo inputs generator
-class Pseudo_inputs_generator(nn.Module):
-    def __init__(
-        self,
-        number_of_channels: int,
-        number_of_points: int,
-        pseudo_inputs_num: int,
-        dropout: float,
-    ) -> None:
-        super(Pseudo_inputs_generator, self).__init__()
-        self.number_of_channels = number_of_channels
-        self.number_of_points = number_of_points
-        self.pseudo_inputs_num = pseudo_inputs_num
-        self.first_layer = nn.Linear(pseudo_inputs_num, pseudo_inputs_num)
-        self.relu = nn.ReLU()
-        self.second_layer = nn.Linear(
-            pseudo_inputs_num, number_of_channels * number_of_points
-        )
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self) -> torch.Tensor:
-        x = torch.eye(self.pseudo_inputs_num, self.pseudo_inputs_num).to(
-            next(self.parameters()).device
-        )
-        pseudo_inputs = self.first_layer(x)
-        pseudo_inputs = self.relu(pseudo_inputs)
-        pseudo_inputs = self.dropout(pseudo_inputs)
-        pseudo_inputs = self.second_layer(pseudo_inputs)
-        pseudo_inputs = self.dropout(pseudo_inputs)
-        return pseudo_inputs.view(
-            -1, self.number_of_channels, self.number_of_points
-        )
-
 
 # Model
 class VAE_TCN_Vamp(nn.Module):
@@ -485,7 +211,7 @@ class VAE_TCN_Vamp(nn.Module):
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=lr)
         dataloader_train, data_loader_val = get_data_loader(
-            x, batch_size, num_worker=self.num_workers
+            x, batch_size=batch_size, num_worker=self.num_workers
         )
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
         early_stopping = (
@@ -630,7 +356,7 @@ class VAE_TCN_Vamp(nn.Module):
         if not self.trained:
             raise Exception("Model not trained yet")
         data1, _ = get_data_loader(
-            data, batch_size, 0.8, num_worker=self.num_workers
+            data, batch_size=batch_size, train_split=0.8, num_worker=self.num_workers
         )
         i = 0
         batches_reconstructed = []

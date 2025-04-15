@@ -276,7 +276,7 @@ def schedule(time: int, command: str) -> str:
     )
 
 
-def gen_instruct_f(flight: Flight, nav_p: Flight, path_log: str) -> str:
+def gen_instruct_f(flight: Flight, nav_p: Flight, path_log: str,typecode: str = "") -> str:
     """
     return the instruct for a specific flight in a scenario
     """
@@ -284,7 +284,7 @@ def gen_instruct_f(flight: Flight, nav_p: Flight, path_log: str) -> str:
     acid = f_data.iloc[0]["flight_id"]
     text = cre(
         acid,
-        f_data.iloc[0]["typecode"],
+        typecode,
         f_data.iloc[0]["latitude"],
         f_data.iloc[0]["longitude"],
         f_data.iloc[0]["track"],
@@ -486,6 +486,7 @@ class Simulator:
         log_f_name: str,
         log_time: int = 10,
         load_file: str = "",
+        typecode: str = "",
     ) -> None:
         """
         creates the scenario file related to the traffic
@@ -502,7 +503,7 @@ class Simulator:
         list_flights = []
         for e in tqdm(t, desc="writing text in memory"):
             f = traff[e.data.iloc[0]["flight_id"]]
-            text += gen_instruct_f(f, e, log_f_name)
+            text += gen_instruct_f(f, e, log_f_name,typecode)
             list_flights.append(f.flight_id)
 
         with open(

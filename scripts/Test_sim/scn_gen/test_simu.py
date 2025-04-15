@@ -10,5 +10,30 @@ print(CURRENT_PATH)
 
 
 from data_orly.src.simulation import Simulator, launch_simulation
+import argparse
 
-launch_simulation('/home/arnault/traffic/data_orly/scn/B738_VAE_TCN_Vamp__800.scn','/home/arnault/traffic/data_orly/sim_logs/test_1.log',3)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="files for the test")
+
+    parser.add_argument("--scn", type=str, default="", help="scn file path")
+    parser.add_argument("--logs", type=str, default="", help="log file path")
+    parser.add_argument(
+        "--log_t_step",
+        type=int,
+        default=3,
+        help="Timedeltas of the data to be logged",
+    )
+
+    args = parser.parse_args()
+
+    log_file = args.logs
+    scn_file = args.scn
+    if log_file == "":
+        log_file = (
+            "/home/arnault/traffic/data_orly/sim_logs/"
+            + scn_file.split("/")[-1].split(".")[0]
+            + ".log"
+        )
+
+    launch_simulation(scn_file, log_file, args.log_t_step)

@@ -1,0 +1,114 @@
+import torch
+import torch.distributions as distrib
+import torch.nn.functional as F
+
+
+# %%
+# MSE loss for reconstruction
+def reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
+    """
+    Basic MSE loss
+    """
+    return F.mse_loss(x_recon, x, reduction="sum")
+
+
+def negative_log_likelihood(
+    x: torch.Tensor, recon: torch.Tensor, scale: torch.Tensor
+) -> torch.Tensor:
+    """
+    Computes the negative log likelyhood for the given scalar scale.
+    """
+    mu = recon
+    dist = distrib.Normal(mu, scale)
+    log_likelihood = dist.log_prob(x)
+    return -log_likelihood.sum(dim=[i for i in range(1, len(x.size()))])
+
+
+# Normal KL loss for gaussian prior
+def kl_loss(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+    """
+    Computes the KL loss for the given parameters and the standard normal
+    law.
+    """
+    var = torch.exp(logvar)
+    kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - var)
+    return kl_divergence
+
+
+def create_mixture(
+    mu: torch.Tensor, log_var: torch.Tensor, vamp_weight: torch.Tensor
+) -> distrib.MixtureSameFamily:
+    """
+    Creates a mixture of gaussian, using the log_var an mu tensor in entry.
+    Each batch dim of mu and log_var must represent a component of the GMM.
+    The Weights contol the importance of each component.
+    """
+
+    n_components = mu.size(0)
+    if torch.isnan(mu).any():
+        print("NaN detected in mu")
+    if torch.isnan(log_var).any():
+        print("NaN detected in log_var")
+
+    # print("w ", vamp_weight.shape)
+    # print("mu ", mu.shape)
+    dist = distrib.MixtureSameFamily(
+        distrib.Categorical(logits=vamp_weight),
+        component_distribution=distrib.Independent(
+            distrib.Normal(mu, (log_var / 2).exp()), 1
+        ),
+    )
+    return dist
+
+
+def create_distrib_posterior(
+    mu: torch.Tensor, log_var: torch.Tensor
+) -> distrib.Distribution:
+    """
+    Returns the gaussian posterior
+    """
+    return distrib.Independent(distrib.Normal(mu, (log_var / 2).exp()), 1)
+
+
+def vamp_prior_kl_loss(
+    z: torch.Tensor,
+    mu: torch.Tensor,
+    log_var: torch.Tensor,
+    pseudo_mu: torch.Tensor,
+    pseudo_log_var: torch.Tensor,
+    vamp_weight: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Computes the kl loss for the vamp_prior implementation
+    """
+    prior = create_mixture(pseudo_mu, pseudo_log_var, vamp_weight)
+    posterior = create_distrib_posterior(mu, log_var)
+    log_prior = prior.log_prob(z)
+    log_posterior = posterior.log_prob(z)
+    return log_posterior - log_prior
+
+
+# Vamp prior loss
+def VAE_vamp_prior_loss(
+    x: torch.Tensor,
+    x_recon: torch.Tensor,
+    z: torch.Tensor,
+    mu: torch.Tensor,
+    logvar: torch.Tensor,
+    pseudo_mu: torch.Tensor,
+    pseudo_log_var: torch.Tensor,
+    scale: torch.Tensor = None,
+    vamp_weight: torch.Tensor = None,
+    beta: float = 1,
+) -> torch.Tensor:
+    """
+    ELBO for the VampPrior implementations
+    """
+
+    recon_loss = negative_log_likelihood(x, x_recon, scale)
+    # Compute KL divergence
+    batch_size = x.size(0)
+    kl_loss = vamp_prior_kl_loss(
+        z, mu, logvar, pseudo_mu, pseudo_log_var, vamp_weight
+    )
+    return recon_loss.mean() + beta * kl_loss.mean()

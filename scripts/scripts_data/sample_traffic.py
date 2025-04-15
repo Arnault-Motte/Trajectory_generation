@@ -44,7 +44,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    print("la")
+    
     # if path is not given we create it
     f_path = args.samp_traff
     og_path = args.traff_file

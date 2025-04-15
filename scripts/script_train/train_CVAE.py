@@ -1,6 +1,8 @@
 import sys  # noqa: I001
 import os
 
+
+
 current_path = os.getcwd()
 sys.path.append(os.path.abspath(current_path))
 
@@ -17,6 +19,7 @@ from data_orly.src.generation.data_process import (
 from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
 import argparse
 from traffic.core import Traffic
+from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 
 
 def main() -> int:
@@ -119,8 +122,8 @@ def main() -> int:
     )
 
     data = data_cleaner.clean_data()
-    labels = data_cleaner.return_labels()
-    print(labels, labels.shape)
+
+
 
     ##Getting the model
     seq_len = 200
@@ -137,30 +140,38 @@ def main() -> int:
     patience = 30
     min_delta = -100
     print(in_channels)
+    labels_latent = 16
+    labels = data_cleaner.return_labels()
+    labels_dim = labels.shape[1]
 
-    model = VAE_TCN_Vamp(
-        in_channels,
-        output_channels,
-        latent_dim,
-        kernel_size,
-        stride,
-        dilatation,
-        dropout,
-        number_of_block,
-        pooling_factor,
-        pooling_factor,
-        seq_len,
-        pseudo_input_num=pseudo_input_num,
-        early_stopping=True,
-        patience=patience,
-        min_delta=min_delta,
-        temp_name=f"best_model{args.cuda}.pth",
-        init_std=0.8,
-    ).to(device)
+    
+    model = CVAE_TCN_Vamp(
+            in_channels,
+            output_channels,
+            latent_dim,
+            kernel_size,
+            stride,
+            dilatation,
+            dropout,
+            number_of_block,
+            pooling_factor,
+            pooling_factor,
+            label_dim=labels_dim,
+            label_latent=labels_latent,
+            seq_len=seq_len,
+            pseudo_input_num=pseudo_input_num,
+            early_stopping=True,
+            patience=patience,
+            min_delta=min_delta,
+            temp_save=f"best_model{args.cuda}.pth",
+            conditioned_prior=True,
+            num_worker=6,
+            init_std=args.scale,
+        ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data, epochs=1000, lr=1e-3, batch_size=500)
+    model.fit(data,labels,epochs=1000, lr=1e-3, batch_size=500)
     model.save_model(args.weights)
     return 0
 

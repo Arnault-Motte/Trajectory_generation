@@ -49,15 +49,33 @@ def main() -> None:
         "--cond", type=int, default=0, help="Conditional model or not"
     )
 
+    parser.add_argument(
+        "--vertical_rate",
+        type=int,
+        default=0,
+        help="Model trained with vertical rate",
+    )
+    parser.add_argument(
+        "--data",
+        type=str,
+        default="data_orly/data/takeoffs_LFPO_07.pkl",
+        help="path to the data",
+    )
+
+    
+
     args = parser.parse_args()
 
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     print(args.typecodes)
     conditional = bool(args.cond)
+
+    columns = ["track", "groundspeed", "timedelta"]
+    columns += ["vertical_rate"] if args.vertical_rate else ["altitude"]
     data_cleaner = Data_cleaner(
-        "data_orly/data/takeoffs_LFPO_07.pkl",
-        columns=["track", "vertical_rate", "groundspeed", "timedelta"],
+        args.data,
+        columns=columns,
         chosen_typecodes=args.typecodes,
     )
     data = data_cleaner.clean_data()
@@ -142,9 +160,9 @@ def main() -> None:
 
     chosen_type_codes_string = "_".join(data_cleaner.chosen_types)
     name_path = (
-        chosen_type_codes_string
+        str(args.weight_file).split("/")[-1].split(".")[0]
         + "_"
-        + type(model).__name__
+        + chosen_type_codes_string
         + "_"
         + args.typecode_to_gen
         + "_"
@@ -152,11 +170,15 @@ def main() -> None:
         + "_"
         + str(args.nf)
     )
-    traff_file = "/home/arnault/traffic/data_orly/src/generation/saved_traff/" + name_path + ".pkl" 
+    traff_file = (
+        "/home/arnault/traffic/data_orly/src/generation/saved_traff/"
+        + name_path
+        + ".pkl"
+    )
     t.to_pickle(traff_file)
     path = "/home/arnault/traffic/data_orly/scn/" + name_path + ".scn"
     second_path = ""
-    s.scenario_create(path, name_path, load_file=second_path)
+    s.scenario_create(path, name_path, load_file=second_path,typecode = args.typecode_to_gen)
 
     print("end")
 

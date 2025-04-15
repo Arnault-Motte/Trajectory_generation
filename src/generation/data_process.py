@@ -351,6 +351,7 @@ class Data_cleaner:
             trajectories.shape
         )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
 
+
         # Reshape to 2D for scaling: each row is an observation
         trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
 

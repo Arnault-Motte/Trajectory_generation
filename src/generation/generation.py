@@ -71,7 +71,7 @@ class Generator:
                 pbar.update(1)
 
                 traf = self.data_clean.output_converter(
-                    sampled, landing=True, lat_long=lat_long
+                    sampled, landing=True, lat_lon=lat_long
                 )
                 pbar.update(1)
                 traff_list.append(traf)

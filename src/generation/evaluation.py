@@ -30,23 +30,22 @@ DEFAULT_AIRCRAFT = "A320"
 
 
 def e_distance(
-    traj_gen_flt: np.ndarray, traj_og_flt: np.ndarray, metric: str = "euclidean",
+    traj_gen_flt: np.ndarray,
+    traj_og_flt: np.ndarray,
+    metric: str = "euclidean",
 ) -> float:
     x = traj_gen_flt
     y = traj_og_flt
-    dxy = cdist(x, y, metric=metric)
-    dxx = cdist(x, y, metric=metric)
-    dyy = cdist(y, y, metric=metric)
+    dxy = cdist(x, y, metric=metric).mean()
+    dxx = cdist(x, x, metric=metric).mean()
+    dyy = cdist(y, y, metric=metric).mean()
 
     m, n = len(x), len(y)
 
-    e_distance = (
-        (2 / (m * n)) * np.sum(dxy)
-        - (1 / (m**2)) * np.sum(dxx)
-        - (1 / (n**2)) * np.sum(dyy)
-    )
+    e_distance = 2 * dxy - dxx - dyy
 
     return e_distance
+
 
 def e_distance_batched(
     traj_gen_flt: np.ndarray,
@@ -55,32 +54,36 @@ def e_distance_batched(
     batch_size: int = 1000,
 ) -> float:
     x = traj_gen_flt  # shape (m, d)
-    y = traj_og_flt   # shape (n, d)
+    y = traj_og_flt  # shape (n, d)
     m, n = len(x), len(y)
 
     # 1. Compute (2 / mn) * sum_{i,j} ||x_i - y_j||
     sum_dxy = 0.0
     for i in range(0, m, batch_size):
-        x_batch = x[i:i+batch_size]
+        x_batch = x[i : i + batch_size]
         dists = cdist(x_batch, y, metric=metric)  # shape (batch_size, n)
         sum_dxy += dists.sum()
 
     # 2. Compute (1 / m²) * sum_{i,j} ||x_i - x_j||
     sum_dxx = 0.0
     for i in range(0, m, batch_size):
-        x_batch = x[i:i+batch_size]
+        x_batch = x[i : i + batch_size]
         dists = cdist(x_batch, x, metric=metric)
         sum_dxx += dists.sum()
 
     # 3. Compute (1 / n²) * sum_{i,j} ||y_i - y_j||
     sum_dyy = 0.0
     for i in range(0, n, batch_size):
-        y_batch = y[i:i+batch_size]
+        y_batch = y[i : i + batch_size]
         dists = cdist(y_batch, y, metric=metric)
         sum_dyy += dists.sum()
 
     # Combine everything
-    e_dist = (2 / (m * n)) * sum_dxy - (1 / (m ** 2)) * sum_dxx - (1 / (n ** 2)) * sum_dyy
+    e_dist = (
+        (2 / (m * n)) * sum_dxy
+        - (1 / (m**2)) * sum_dxx
+        - (1 / (n**2)) * sum_dyy
+    )
     return e_dist
 
 
@@ -217,12 +220,15 @@ class Evaluator:
             max_num_wrokers if max_num_wrokers > 0 else mp.cpu_count()
         )
 
-    def e_dist(self, n_t: int, label: str = "") -> float:
+    def e_dist(
+        self, n_t: int, label: str = "", scaler: MinMaxScaler = None
+    ) -> float:
         """
         Computes the e-distance between the generated traffic and the original traffic.
         n controls the max number of trajectory considered
         """
         cond = label != ""
+        #print("Conditioned : ", cond)
 
         generated = (
             self.gen.generate_n_flight_per_labels(
@@ -238,23 +244,33 @@ class Evaluator:
 
         n, m = len(generated), len(self.ini_traff)
 
-        if n_t and (n_t > n or n_t > m):
-            n_t = min(n, m)
+        # if n_t and (n_t > n or n_t > m):
+        #     n_t = min(n, m)
 
-        return e_distance(
-            convert_traff_numpy(generated.sample(n_t)),
-            convert_traff_numpy(self.ini_traff.sample(n_t)),#batch_size=3000
+        np_gen = convert_traff_numpy(generated.sample(n_t), scaler=scaler)
+        np_traff = convert_traff_numpy(
+            self.ini_traff.sample(min(n_t, m)), scaler=scaler
         )
 
+        return e_distance(np_gen, np_traff)
+
     def compute_e_dist(
-        self, number_of_trial: int = 100, n_t: int = 3000, label: str = ""
+        self,
+        number_of_trial: int = 100,
+        n_t: int = 3000,
+        label: str = "",
+        scaler: MinMaxScaler = None,
     ) -> float:
         """
         Computes the mean of the e_distance after n number of trials
         """
-        return sum(
-            self.e_dist(n_t, label)
-            for _ in tqdm(range(number_of_trial), desc="Computing e_dist")
+
+        return (
+            sum(
+                self.e_dist(n_t, label, scaler)
+                for _ in tqdm(range(number_of_trial), desc="Computing e_dist")
+            )
+            / number_of_trial
         )
 
     def flight_navpoints_simulation(f: Flight) -> Flight:
@@ -263,13 +279,16 @@ class Evaluator:
 
 def convert_traff_numpy(
     traff: Traffic,
-    columns: list[str] = ["groundspeed", "track", "timedelta", "altitude"],
+    columns: list[str] = ["track","groundspeed","timedelta", "altitude"],
+    scaler: MinMaxScaler = None,
 ) -> np.ndarray:
     """
     convert a traff with the specified columns to a numpy array.
     """
     data = traff.data[columns]
-    array = data.to_numpy(dtype=np.float64)
-    array = array.reshape(len(traff),-1 ,len(columns))
-    array = array.reshape(len(traff),-1)
+    array = data.to_numpy(dtype=np.float32)
+    if scaler:
+        array = scaler.transform(array)
+    array = array.reshape(len(traff), -1, len(columns))
+    array = array.reshape(len(traff), -1)
     return array
