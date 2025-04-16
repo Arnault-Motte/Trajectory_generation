@@ -1,0 +1,1 @@
+uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --log_file "data_orly/sim_logs/A320_A321/CVAE_A320_A321_200_A320.log"  --ignored "data_orly/scn/test A320 A321/CVAE_both_A320_A321_200_A320_A321_A320_800_2000_denied_flight.pkl" --saved_name "A320_A321_i_A320.pkl" --typecodes A320

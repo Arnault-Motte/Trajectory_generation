@@ -10,6 +10,7 @@ print(os.path.dirname(__file__))
 from data_orly.src.simulation import Simulator
 from data_orly.src.generation.test_display import plot_traffic
 from data_orly.src.generation.evaluation import compute_distances
+from data_orly.src.generation.data_process import Data_cleaner
 from traffic.core import Traffic
 import pickle
 import argparse
@@ -43,12 +44,42 @@ def main() -> None:
         help="name of the saved file",
     )
 
+    parser.add_argument(
+        "--typecodes",
+        type=str,
+        nargs="+",
+        default=[],
+        help="typecodes to be considered in the og traff",
+    )
+
+    parser.add_argument(
+        "--vertical_rate",
+        type=int,
+        default=0,
+        help="does the column contains teh vertical rate",
+    )
+
+
     args = parser.parse_args()
 
-    t = Traffic.from_file(args.og_traff)
+    columns = ["track","groundspeed","timedelta"]
+    columns += ["vertical_rate"] if args.vertical_rate else ["altitude"]
+    print(args.typecodes)
+
+    data_clean = Data_cleaner(args.og_traff,chosen_typecodes=args.typecodes,columns=columns,aircraft_data=True)
+
+
+
+    t = data_clean.basic_traffic_data
+    
+
+    
+
+
     print(len(t),t.data.head(4))
     s = Simulator(t)
     f_traff = s.read_csv_log_file(args.log_file, flight_ids_paths=args.ignored)
+    print([f.flight_id for f in f_traff[:10]])
 
     distances = compute_distances(t, f_traff, 50)
     print(len(distances))

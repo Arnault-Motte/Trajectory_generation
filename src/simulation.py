@@ -436,7 +436,9 @@ class Simulator:
     """
 
     def __init__(self, traff: Traffic, initial_alt: int = 500):
-        self.traff = traff.aircraft_data()
+        self.traff = traff
+        if "typecode" not in self.traff.data.columns:
+            self.traff = self.traff.aircraft_data()
         if "altitude" not in self.traff.data.columns:
             self.traff = compute_alt(self.traff, initial_alt)
         self.set_nave = set()
@@ -541,6 +543,7 @@ class Simulator:
         with open(flight_ids_paths, "rb") as f:
             flight_ids = pickle.load(f)
 
+        print(flight_ids)
         print(data)
         num_flight = len(data[data["timedelta"] == 0])
         # check if we have the exact sam enumber of point for each flight

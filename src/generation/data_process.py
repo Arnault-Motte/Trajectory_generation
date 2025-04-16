@@ -100,6 +100,7 @@ class Data_cleaner:
         chosen_typecodes: list[str] = [],
         total: bool = False,
         traff: Traffic = None,
+        aircraft_data : bool =  True,
     ):
         # Check if we have any filename provided
         if len(file_names) == 0 and not file_name and traff is None:
@@ -108,13 +109,16 @@ class Data_cleaner:
         # Creating the data from one or several files
 
         if traff is not None:
-            self.basic_traffic_data = traff.aircraft_data()
+            self.basic_traffic_data = traff
         elif file_name:
             self.basic_traffic_data = Traffic.from_file(
                 file_name
-            ).aircraft_data()
+            )
         else:
             self.basic_traffic_data = traffic_random_merge(file_names, total)
+
+        if aircraft_data and "typecode" not in self.basic_traffic_data.data.columns:
+            self.basic_traffic_data = self.basic_traffic_data.aircraft_data()
 
         self.file_names = file_names
         self.total = total
