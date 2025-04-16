@@ -7,15 +7,17 @@ print("Current working directory:", CURRENT_PATH)
 print(os.path.dirname(__file__))
 
 
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.simulation import Simulator
-from data_orly.src.generation.test_display import plot_traffic
-from traffic.core import Traffic
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.generation import Generator
-from data_orly.src.generation.data_process import Data_cleaner
 import argparse
+
 import torch
+
+from data_orly.src.generation.data_process import Data_cleaner
+from data_orly.src.generation.generation import Generator
+from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from data_orly.src.generation.test_display import plot_traffic
+from data_orly.src.simulation import Simulator
+from traffic.core import Traffic
 
 
 def main() -> None:
@@ -66,7 +68,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     print(args.typecodes)
     conditional = bool(args.cond)
@@ -171,12 +173,12 @@ def main() -> None:
         + str(args.nf)
     )
     traff_file = (
-        "/home/arnault/traffic/data_orly/src/generation/saved_traff/"
+        "data_orly/src/generation/saved_traff/"
         + name_path
         + ".pkl"
     )
     t.to_pickle(traff_file)
-    path = "/home/arnault/traffic/data_orly/scn/" + name_path + ".scn"
+    path = "data_orly/scn/" + name_path + ".scn"
     second_path = ""
     s.scenario_create(path, name_path, load_file=second_path,typecode = args.typecode_to_gen)
 

@@ -65,12 +65,13 @@ def main() -> None:
     columns = ["track","groundspeed","timedelta"]
     columns += ["vertical_rate"] if args.vertical_rate else ["altitude"]
     print(args.typecodes)
+#
+    #data_clean = Data_cleaner(args.og_traff,chosen_typecodes=args.typecodes,columns=columns,aircraft_data=True)
 
-    data_clean = Data_cleaner(args.og_traff,chosen_typecodes=args.typecodes,columns=columns,aircraft_data=True)
 
 
-
-    t = data_clean.basic_traffic_data
+    t = Traffic.from_file(args.og_traff)
+    print(t.data.head(4))
     
 
     
@@ -84,7 +85,7 @@ def main() -> None:
     distances = compute_distances(t, f_traff, 50)
     print(len(distances))
     with open(
-        "/home/arnault/traffic/data_orly/results/distances/" + args.saved_name,
+        "data_orly/results/distances/" + args.saved_name,
         "wb",
     ) as file:
         pickle.dump(distances, file)

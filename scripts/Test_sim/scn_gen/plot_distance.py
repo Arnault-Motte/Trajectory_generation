@@ -7,12 +7,14 @@ sys.path.append(os.path.abspath(CURRENT_PATH))
 print("Current working directory:", CURRENT_PATH)
 print(os.path.dirname(__file__))
 
-from data_orly.src.simulation import Simulator
-from data_orly.src.generation.test_display import plot_DTW_SSPD
-from data_orly.src.generation.evaluation import compute_distances
-from traffic.core import Traffic
+import argparse
 import pickle
+
 from data_orly.src.generation.data_process import Data_cleaner
+from data_orly.src.generation.evaluation import compute_distances
+from data_orly.src.generation.test_display import plot_DTW_SSPD
+from data_orly.src.simulation import Simulator
+from traffic.core import Traffic
 
 
 def select_dist(traff: str, dis: dict, chosen_labels: list) -> list[dict]:
@@ -21,7 +23,11 @@ def select_dist(traff: str, dis: dict, chosen_labels: list) -> list[dict]:
     for label in chosen_labels:
         flight_ids = data.return_flight_id_for_label(label)
         print(len(flight_ids))
-        dic_dis = {dist: {key:0.0 for key in dis[dist].keys()} for dist in flight_ids if dist in dis.keys()}
+        dic_dis = {
+            dist: {key: 0.0 for key in dis[dist].keys()}
+            for dist in flight_ids
+            if dist in dis.keys()
+        }
         for f_id in flight_ids:
             if f_id in dis.keys():
                 for key in list(dis.values())[0].keys():
@@ -30,57 +36,78 @@ def select_dist(traff: str, dis: dict, chosen_labels: list) -> list[dict]:
     return list_dist
 
 
-with open(
-    "data_orly/results/distances/d_TO_7_Real", "rb"
-) as f:
-    og_distance = pickle.load(f)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DTW SSPD")
 
-og_traff_path = "data_orly/data/takeoffs_LFPO_07.pkl"
-chosen_labels = ["A21N", "B738"]
+    parser.add_argument(
+        "--og_traff",
+        type=str,
+        default="data_orly/data/takeoffs_LFPO_07.pkl",
+        help="Path of the of traffic file",
+    )
 
-og_dists = select_dist(og_traff_path, og_distance, chosen_labels=chosen_labels)
+    parser.add_argument(
+        "--true_dist",
+        type=str,
+        default="data_orly/results/distances/d_TO_7_Real",
+        help="Path of the distance file for the whole dataset",
+    )
 
-print(og_dists[0][next(iter(og_dists[0]))].keys())
-# A21N
-distances_list = [og_dists[0]]
-labels = ["REFERENCE", "VAE", "CVAE"]
-file_paths = [
-    "data_orly/results/distances/A21N_solo.pkl",
-    "data_orly/results/distances/A21N_duo.pkl",
-]
+    parser.add_argument(
+        "--typecode",
+        type=str,
+        default="",
+        help="Typecode to be considered",
+    )
 
-for file_name in file_paths:
-    with open(
-        file_name, "rb"
-    ) as f:
-        distance = pickle.load(f)
-        distances_list.append(distance)
+    parser.add_argument(
+        "--file_paths",
+        type=str,
+        nargs="+",
+        default=[],
+        help="List of distance files to be ploted",
+    )
 
-plot_DTW_SSPD(
-    distances_list,
-    labels,
-    path="/home/arnault/traffic/data_orly/figures/distances/ref_A21N.png",
-)
+    parser.add_argument(
+        "--labels",
+        type=str,
+        nargs="+",
+        default=[],
+        help="Label for each distance",
+    )
 
-# B738
-distances_list = [og_dists[1]]
-labels = ["REFERENCE", "VAE", "CVAE"]
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="",
+        help="File to save the fig",
+    )
 
+    args = parser.parse_args()
 
-file_paths = [
-    "data_orly/results/distances/B738_solo.pkl",
-    "data_orly/results/distances/B738_duo.pkl",
-]
+    all_true_dist = args.true_dist
+    og_traff_path = args.og_traff
+    chosen_labels = [args.typecode]
+    file_paths = args.file_paths
+    labels = ["REFERENCE"] + args.labels
 
-for file_name in file_paths:
-    with open(
-        file_name, "rb"
-    ) as f:
-        distance = pickle.load(f)
-        distances_list.append(distance)
+    with open(all_true_dist, "rb") as f:
+        og_distance = pickle.load(f)
 
-plot_DTW_SSPD(
-    distances_list,
-    labels,
-    path="/home/arnault/traffic/data_orly/figures/distances/ref_B738.png",
-)
+    og_dists = select_dist(
+        og_traff_path, og_distance, chosen_labels=chosen_labels
+    )
+    print(og_dists[0][next(iter(og_dists[0]))].keys())
+    distances_list = [og_dists[0]]
+    for file_name in file_paths:
+        with open(file_name, "rb") as f:
+            distance = pickle.load(f)
+            distances_list.append(distance)
+    plot_DTW_SSPD(
+        distances_list,
+        labels,
+        path=args.save_path,
+    )
+
+if __name__ == "__main__":
+    main()
