@@ -10,16 +10,17 @@ print("Current working directory:", current_path)
 print(os.path.dirname(__file__))
 
 
+import argparse
+
 import torch
 
 from data_orly.src.generation.data_process import (
     Data_cleaner,
     return_traff_per_typecode,
 )
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
-import argparse
-from traffic.core import Traffic
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
+from traffic.core import Traffic
 
 
 def main() -> int:
@@ -160,7 +161,7 @@ def main() -> int:
             label_latent=labels_latent,
             seq_len=seq_len,
             pseudo_input_num=pseudo_input_num,
-            early_stopping=True,
+            early_stopping=False,
             patience=patience,
             min_delta=min_delta,
             temp_save=f"best_model{args.cuda}.pth",
