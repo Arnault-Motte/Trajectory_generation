@@ -1,7 +1,7 @@
 import datetime
 import multiprocessing as mp
 from collections import Counter
-from datetime import timedelta, time
+from datetime import time, timedelta
 
 import torch
 from scipy.spatial.distance import cdist, jensenshannon
@@ -16,12 +16,12 @@ from data_orly.src.generation.data_process import (
     compute_vertical_rate,
     jason_shanon,
 )
+from data_orly.src.generation.generation import Generator
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
 )
 from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.generation import Generator
 from numpy._typing._array_like import NDArray
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic

@@ -6,7 +6,7 @@
 
 #scn files
 
-uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A321_200.pth" --nf 2000 --cond 0 --typecodes A321
-uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A320.pth" --nf 2000 --cond 0 --typecodes A320
-uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_A320_A321_200.pth" --nf 2000 --typecodes A320 A321 --cond 1 --typecode_to_gen A320
+# uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A321_200.pth" --nf 2000 --cond 0 --typecodes A321
+# uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A320.pth" --nf 2000 --cond 0 --typecodes A320
+# uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_A320_A321_200.pth" --nf 2000 --typecodes A320 A321 --cond 1 --typecode_to_gen A320
 uv run python data_orly/scripts/Test_sim/scn_gen/scn_gen.py --data "data_orly/data/sampled_data/combined_data/A320_A321_200.pkl" --weight_file "data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_A320_A321_200.pth" --nf 2000 --typecodes A320 A321 --cond 1 --typecode_to_gen A321 

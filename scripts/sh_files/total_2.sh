@@ -1,0 +1,11 @@
+#Dist compute
+
+uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/CVAE_both_A320_A321_200_A320_A321_A320_800_2000.pkl" --log_file "data_orly/sim_logs/A320_A321_2/A320_both.log"  --ignored "data_orly/scn/A320_321_t2/CVAE_both_A320_A321_200_A320_A321_A320_800_2000_denied_flight.pkl" --saved_name "A320_both.pkl" --typecodes A320
+uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/CVAE_both_A320_A321_200_A320_A321_A321_800_2000.pkl" --log_file "data_orly/sim_logs/A320_A321_2/A321_both.log"  --ignored "data_orly/scn/A320_321_t2/CVAE_both_A320_A321_200_A320_A321_A321_800_2000_denied_flight.pkl" --saved_name "A321_both.pkl" --typecodes A321
+uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/VAE_TCN_Vampprior_take_off_7_alt_cond_A320_A320__800_2000.pkl"  --log_file "data_orly/sim_logs/A320_A321_2/A320_solo.log" --ignored "data_orly/scn/A320_321_t2/VAE_TCN_Vampprior_take_off_7_alt_cond_A320_A320__800_2000_denied_flight.pkl" --saved_name "A320_solo.pkl" --typecodes A320
+uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/VAE_TCN_Vampprior_take_off_7_alt_cond_A321_200_A321__800_2000.pkl"  --log_file "data_orly/sim_logs/A320_A321/VAE_A321_200.log" --ignored "data_orly/scn/A320_321_t2/VAE_TCN_Vampprior_take_off_7_alt_cond_A321_200_A321__800_2000_denied_flight.pkl" --saved_name "A321_solo.pkl" --typecodes A321
+
+#Plot them
+
+uv run python data_orly/scripts/Test_sim/scn_gen/plot_distance.py --og_traff data_orly/data/sampled_data/combined_data/A320_A321_200.pkl --true_dist "data_orly/results/distances/d_TO_7_Real_more_points.pkl" --typecode A320 --labels VAE CVAE --save_path "data_orly/figures/distances/A320_full_2.png" --file_paths "data_orly/results/distances/A320_both.pkl" "data_orly/results/distances/A320_solo.pkl"
+uv run python data_orly/scripts/Test_sim/scn_gen/plot_distance.py --og_traff data_orly/data/sampled_data/combined_data/A320_A321_200.pkl --true_dist "data_orly/results/distances/d_TO_7_Real_more_points.pkl" --typecode A321 --labels VAE CVAE --save_path "data_orly/figures/distances/A321_200_2.png" --file_paths "data_orly/results/distances/A321_both.pkl" "data_orly/results/distances/A321_solo.pkl"
