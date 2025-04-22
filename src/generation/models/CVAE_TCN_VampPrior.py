@@ -493,6 +493,7 @@ class CVAE_TCN_Vamp(nn.Module):
                     break
         if self.early_stopping:
             self.load_model(early_stopping.path)
+            print('|--Best model loaded--|')
         self.trained = True
 
     def reproduce(self, x: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
