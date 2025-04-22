@@ -173,6 +173,7 @@ def main() -> None:
     test_label = args.typecode_to_check if args.typecode_to_check != "" else label
     data_og = data_cleaner.basic_traffic_data
     data_og = data_og.query(f'typecode == "{test_label}"')
+    print(len(data_og))
     ev = Evaluator(gen, data_og)
 
 
