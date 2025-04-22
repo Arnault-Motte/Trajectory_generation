@@ -176,7 +176,7 @@ def compute_distances(
     for f2 in tqdm(simulated_traff):
         flight_id = f2.flight_id
         f1 = traff[flight_id]
-        f1 = f1.drop_duplicates(subset="timestamp")  # the data is sometimes bad
+        f1:Flight = f1.drop_duplicates(subset="timestamp")  # the data is sometimes bad
         f1 = f1.before(f2.stop)
         f2 = f2.before(f1.stop)  # we want the flight to have the same duration
 

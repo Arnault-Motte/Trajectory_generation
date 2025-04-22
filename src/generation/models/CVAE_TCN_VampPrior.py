@@ -7,11 +7,11 @@ from torch.nn.utils import weight_norm
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
-from data_orly.src.core.early_stop import Early_stopping
-from data_orly.src.core.networks import *
-from data_orly.src.core.loss import *
-
 import numpy as np
+from data_orly.src.core.early_stop import Early_stopping
+from data_orly.src.core.loss import *
+from data_orly.src.core.networks import *
+
 
 ## Encoder
 class TCN_encoder(nn.Module):

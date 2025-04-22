@@ -8,14 +8,16 @@ sys.path.append(os.path.abspath(CURRENT_PATH))
 print("Current working directory:", CURRENT_PATH)
 print(os.path.dirname(__file__))
 
+import argparse
+
+import torch
+
+from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.evaluation import Evaluator
 from data_orly.src.generation.generation import Generator
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.data_process import Data_cleaner
-from traffic.core import Traffic
-import torch
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-import argparse
+from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from traffic.core import Traffic
 
 
 def main() -> None:
@@ -75,6 +77,13 @@ def main() -> None:
         type=int,
         default=3000,
         help="Number of trajectory to generate",
+    )
+
+    parser.add_argument(
+        "--typecode_to_check",
+        type=str,
+        default="",
+        help="typecode to check",
     )
 
     args = parser.parse_args()
@@ -160,7 +169,12 @@ def main() -> None:
     model.load_model(args.model)
 
     gen = Generator(model, data_cleaner)
-    ev = Evaluator(gen, data_cleaner.basic_traffic_data)
+
+    test_label = args.typecode_to_check if args.typecode_to_check != "" else label
+    data_og = data_cleaner.basic_traffic_data
+    data_og = data_og.query(f'typecode == "{test_label}"')
+    ev = Evaluator(gen, data_og)
+
 
     dist = ev.compute_e_dist(
         label=label,

@@ -161,7 +161,7 @@ def main() -> int:
             label_latent=labels_latent,
             seq_len=seq_len,
             pseudo_input_num=pseudo_input_num,
-            early_stopping=False,
+            early_stopping=True,
             patience=patience,
             min_delta=min_delta,
             temp_save=f"best_model{args.cuda}.pth",
