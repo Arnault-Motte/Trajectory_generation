@@ -619,13 +619,11 @@ class CVAE_TCN_Vamp(nn.Module):
                 if self.prior_weights_layers
                 else self.prior_weights
             )
-            print("prior_weight", prior_weights.shape)
-            print(
-                "sizes = ",
-            )
+            #print("prior_weight", prior_weights.shape)
+            
             mu, log_var = self.pseudo_inputs_latent()
-            print("mu", mu.shape)
-            print("log_var ", log_var.shape)
+            #print("mu", mu.shape)
+            #print("log_var ", log_var.shape)
         distrib = create_mixture(
             mu, log_var, vamp_weight=prior_weights.squeeze(0)
         )
@@ -642,13 +640,13 @@ class CVAE_TCN_Vamp(nn.Module):
         device = next(self.parameters()).device
         samples = []
         for _ in range(0, num_samples, batch_size):
-            print("sizes fun : ", labels.shape, batch_size)
+            #print("sizes fun : ", labels.shape, batch_size)
             current_batch_size = min(batch_size, num_samples - len(samples))
             z = self.sample_from_conditioned_prior(
                 current_batch_size, labels[0]
             ).to(device)
 
-            generated_data = self.decode(z, labels)
+            generated_data = self.decode(z, labels).detach().cpu()
             samples.append(generated_data)
         final_samples = torch.cat(samples)
         return final_samples.permute(0, 2, 1)

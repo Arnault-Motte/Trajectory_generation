@@ -2,6 +2,7 @@ import datetime
 import multiprocessing as mp
 from collections import Counter
 from datetime import time, timedelta
+from multiprocessing import Pool
 
 import torch
 from scipy.spatial.distance import cdist, jensenshannon
@@ -176,7 +177,9 @@ def compute_distances(
     for f2 in tqdm(simulated_traff):
         flight_id = f2.flight_id
         f1 = traff[flight_id]
-        f1:Flight = f1.drop_duplicates(subset="timestamp")  # the data is sometimes bad
+        f1: Flight = f1.drop_duplicates(
+            subset="timestamp"
+        )  # the data is sometimes bad
         f1 = f1.before(f2.stop)
         f2 = f2.before(f1.stop)  # we want the flight to have the same duration
 
@@ -228,7 +231,7 @@ class Evaluator:
         n controls the max number of trajectory considered
         """
         cond = label != ""
-        #print("Conditioned : ", cond)
+        # print("Conditioned : ", cond)
 
         generated = (
             self.gen.generate_n_flight_per_labels(
@@ -265,21 +268,64 @@ class Evaluator:
         Computes the mean of the e_distance after n number of trials
         """
 
-        return (
-            sum(
-                self.e_dist(n_t, label, scaler)
-                for _ in tqdm(range(number_of_trial), desc="Computing e_dist")
+        cond = label != ""
+        # print("Conditioned : ", cond)
+
+        list_gen = []
+
+        for _ in tqdm(range(number_of_trial), desc="generating"):
+            generated = (
+                self.gen.generate_n_flight_per_labels(
+                    labels=[label],
+                    n_points=n_t,
+                    lat_long=False,
+                )[0]
+                .assign_id()
+                .eval()
+                if cond
+                else self.gen.generate_n_flight(n_t, lat_long=False)
+                .assign_id()
+                .eval()
             )
-            / number_of_trial
-        )
+            list_gen.append(convert_traff_numpy(generated, scaler=scaler))
+
+        m = len(self.ini_traff)
+
+        list_traff = [
+            convert_traff_numpy(
+                self.ini_traff.sample(min(n_t, m)), scaler=scaler
+            )
+            for _ in range(number_of_trial)
+        ]
+
+        args_list = [(list_traff[i], list_gen[i]) for i in range(number_of_trial)]
+
+        with Pool(processes=10) as pool:
+            # e_distances = pool.map(self.e_dist_chunk, args_list)
+            e_distances = list(
+                tqdm(
+                    pool.imap(e_dist_chunk, args_list),
+                    total=len(args_list),
+                )
+            )
+
+        return sum(e_distances) / number_of_trial
 
     def flight_navpoints_simulation(f: Flight) -> Flight:
         pass
 
 
+def e_dist_chunk(
+    args: tuple[np.ndarray, np.ndarray, int, MinMaxScaler],
+) -> float:
+    np_traff, np_gen = args
+
+    return e_distance(np_gen, np_traff)
+
+
 def convert_traff_numpy(
     traff: Traffic,
-    columns: list[str] = ["track","groundspeed","timedelta", "altitude"],
+    columns: list[str] = ["track", "groundspeed", "timedelta", "altitude"],
     scaler: MinMaxScaler = None,
 ) -> np.ndarray:
     """
