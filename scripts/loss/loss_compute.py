@@ -16,6 +16,7 @@ import torch
 from data_orly.src.core.networks import get_data_loader
 from data_orly.src.generation.data_process import (
     Data_cleaner,
+    clean_data,
     return_traff_per_typecode,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
@@ -37,6 +38,13 @@ def main() -> int:
 
     praser.add_argument(
         "--file",
+        type=str,
+        default="",
+        help="Path and name of the file where to save the weights of the model",
+    )
+
+    praser.add_argument(
+        "--origin",
         type=str,
         default="",
         help="Path and name of the file where to save the weights of the model",
@@ -99,6 +107,20 @@ def main() -> int:
     data = data_cleaner.clean_data()
     labels = data_cleaner.return_labels()
     
+    #prepare test data
+    selected_id = set(data_cleaner.return_flight_id_for_label(args.typecode))
+    traff_test = Traffic.from_file(args.origin)
+    if "typecode" not in traff_test.data.columns:
+        traff_test = traff_test.aircraft_data()
+    
+    traff_test = traff_test.query(f'typecode not in {selected_id}')
+    if len(traff_test != 0):
+        test_data = clean_data(traff_test,data_cleaner.scaler,data_cleaner.columns)
+        test_labels = np.array([args.typecode for _ in range(len(traff_test))]).reshape(-1, 1)
+        test_labels = data_cleaner.one_hot.transform(test_labels)
+        test_labels_spec = torch.Tensor(test_labels).to(device)
+    
+
     
     label_data = data_cleaner.return_typecode_array(args.typecode).to(device)
     # labels_spec = torch.Tensor(
@@ -161,6 +183,10 @@ def main() -> int:
         val_loss, val_kl, val_recons = model.compute_loss(
             label_data, labels_spec
         )
+        if (len(traff_test) != 0):
+            test_loss, test_kl, test_recons = model.compute_loss(
+                test_data, test_labels
+            )
     else:
         model = VAE_TCN_Vamp(
             in_channels,
@@ -182,6 +208,8 @@ def main() -> int:
         ).to(device)
         model.load_model(args.model)
         val_loss, val_kl, val_recons = model.compute_loss(label_data)
+        if (len(traff_test) != 0):
+            test_loss, test_kl, test_recons = model.compute_loss(test_data)
 
     print("n_traj =", len(label_data))
 
@@ -195,10 +223,19 @@ def main() -> int:
         f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f} "
     )
 
+    if (len(traff_test) != 0):
+        print(
+        f"Test set, Loss: {test_loss:.4f},MSE: {test_recons:.4f}, KL: {test_kl:.4f} "
+    )
+
+
+
     with open(args.loss_file,"a") as file:
         if os.stat(args.loss_file).st_size == 0:
-            file.write("Model file, Data file, Dataset Typecodes, Selected Typecode, Total loss, KL, log likelihood, MSE \n")
-        file.write(f'{args.model}, {args.file}, {args.typecodes} ,{args.typecode}, {val_loss}, {val_kl}, {val_loss + val_kl}, {val_recons} \n')
+            file.write("Model file, Data file, Dataset Typecodes, Selected Typecode, Total loss, KL, log likelihood, MSE, test \n")
+        file.write(f'{args.model}, {args.file}, {args.typecodes} ,{args.typecode}, {val_loss}, {val_kl}, {val_loss + val_kl}, {val_recons}, False \n')
+        if (len(traff_test) != 0):
+            file.write(f'{args.model}, {args.file}, {args.typecodes} ,{args.typecode}, {test_loss}, {test_kl}, {test_loss + test_kl}, {test_recons}, True \n')
     return 0
 
 
