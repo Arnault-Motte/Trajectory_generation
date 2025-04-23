@@ -5,11 +5,11 @@ import torch
 from scipy.spatial.distance import jensenshannon
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
 from numpy._typing._array_like import NDArray
-from tqdm import tqdm
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
@@ -100,7 +100,7 @@ class Data_cleaner:
         chosen_typecodes: list[str] = [],
         total: bool = False,
         traff: Traffic = None,
-        aircraft_data : bool =  True,
+        aircraft_data: bool = True,
     ):
         # Check if we have any filename provided
         if len(file_names) == 0 and not file_name and traff is None:
@@ -111,13 +111,14 @@ class Data_cleaner:
         if traff is not None:
             self.basic_traffic_data = traff
         elif file_name:
-            self.basic_traffic_data = Traffic.from_file(
-                file_name
-            )
+            self.basic_traffic_data = Traffic.from_file(file_name)
         else:
             self.basic_traffic_data = traffic_random_merge(file_names, total)
 
-        if aircraft_data and "typecode" not in self.basic_traffic_data.data.columns:
+        if (
+            aircraft_data
+            and "typecode" not in self.basic_traffic_data.data.columns
+        ):
             self.basic_traffic_data = self.basic_traffic_data.aircraft_data()
 
         self.file_names = file_names
@@ -164,6 +165,16 @@ class Data_cleaner:
         Returns the typecodes in the order of interpretation
         """
         return self.chosen_types
+
+    def return_typecode_array(self, typecode: str):
+        traffic = return_traff_per_typecode(self.basic_traffic_data, [typecode])[
+            0
+        ]
+        cleaned = self.clean_data_specific(traffic,fit_scale=False)
+        data = torch.tensor(cleaned, dtype=torch.float32)
+        return data
+
+
 
     def traffic_only_top_n(self, top_num: int, tra: Traffic) -> Traffic:
         top_10 = self.get_top_10_planes()
@@ -218,7 +229,7 @@ class Data_cleaner:
         )
 
     def output_converter(
-        self, x_recon: torch.Tensor, landing: bool = False, lat_lon:bool = True
+        self, x_recon: torch.Tensor, landing: bool = False, lat_lon: bool = True
     ) -> Traffic:
         mean_point = (
             self.get_mean_end_point()
@@ -250,11 +261,11 @@ class Data_cleaner:
 
         if lat_lon:
             x_df = compute_latlon_from_trackgs(
-            x_df,
-            n_samples=batch_size,
-            n_obs=self.seq_len,
-            coordinates=coordinates,
-            forward=landing,
+                x_df,
+                n_samples=batch_size,
+                n_obs=self.seq_len,
+                coordinates=coordinates,
+                forward=landing,
             )
         return Traffic(x_df)
 
@@ -355,7 +366,6 @@ class Data_cleaner:
             trajectories.shape
         )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
 
-
         # Reshape to 2D for scaling: each row is an observation
         trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
 
@@ -400,7 +410,9 @@ class Data_cleaner:
 
         return trajectories_scaled
 
-    def clean_data_specific(self, data_to_clean) -> np.ndarray:
+    def clean_data_specific(
+        self, data_to_clean, fit_scale: bool = True
+    ) -> np.ndarray:
         flights = []
         for flight in data_to_clean:
             data = flight.data
@@ -420,7 +432,11 @@ class Data_cleaner:
         trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
 
         # Initialize and fit the scaler
-        trajectories_scaled = self.scaler.fit_transform(trajectories_reshaped)
+        trajectories_scaled = (
+            self.scaler.fit_transform(trajectories_reshaped)
+            if fit_scale
+            else self.scaler.transform(trajectories_reshaped)
+        )
 
         # Reshape back to the original dimensions
         trajectories_scaled = trajectories_scaled.reshape(original_shape)
@@ -538,11 +554,12 @@ def return_traff_per_typecode(
     contains only aircraft of the corresponding label
     in typecodes
     """
-    
-    traff = traff.aircraft_data()
+    if 'typecode' not in traff.data.columns:
+        traff = traff.aircraft_data()
+    #print(traff.data.columns)
     traffs_l = []
-    print(typecodes)
-    for typecode in tqdm(typecodes,desc="test"):
+    #print(typecodes)
+    for typecode in tqdm(typecodes, desc="test"):
         traff_i = traff.query(f'typecode == "{typecode}"')
         traffs_l.append(traff_i)
     return traffs_l

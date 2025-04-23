@@ -505,6 +505,43 @@ class CVAE_TCN_Vamp(nn.Module):
             raise Exception("Model not trained yet")
         self.eval()
         return self.forward(x, labels)[0].permute(0, 2, 1)
+    
+
+    def compute_loss(self,data:torch.Tensor,labels:torch.Tensor):
+            x_batch = data.to(next(self.parameters()).device)
+            labels = labels.to(next(self.parameters()).device)
+            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
+                x_batch, labels
+            )
+            prior_weights = (
+                self.prior_weights_layers(labels)
+                if self.prior_weights_layers
+                else self.prior_weights
+            )
+            loss = VAE_vamp_prior_loss(
+                x_batch.permute(0, 2, 1),
+                x_recon,
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                scale=self.log_std,
+                vamp_weight=prior_weights,
+            )
+            kl = vamp_prior_kl_loss(
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                vamp_weight=prior_weights,
+            )
+            mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
+            cur_size = x_batch.size(0)
+            total_mse = mse.item() / cur_size
+            kl_div = kl.mean().item()
+            return loss.item(), kl_div, total_mse
 
     def compute_val_loss(
         self, val_data: DataLoader

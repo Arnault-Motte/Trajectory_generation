@@ -6,13 +6,12 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 
-from data_orly.src.core.early_stop import Early_stopping
-from data_orly.src.core.networks import *
-from data_orly.src.core.loss import *
-
 import numpy as np
-
+from data_orly.src.core.early_stop import Early_stopping
+from data_orly.src.core.loss import *
+from data_orly.src.core.networks import *
 from traffic.core import tqdm
+
 
 ## Encoder
 class TCN_encoder(nn.Module):
@@ -349,6 +348,37 @@ class VAE_TCN_Vamp(nn.Module):
             total_mse += mse.item() / cur_size
             kl_div += kl.mean().item()
         return total_loss, kl_div, total_mse
+    
+    def compute_loss(self,data:torch.Tensor):
+            x_batch = data.to(next(self.parameters()).device)
+            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
+                x_batch
+            )
+
+            loss = VAE_vamp_prior_loss(
+                x_batch.permute(0, 2, 1),
+                x_recon,
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                scale=self.log_std,
+                vamp_weight=self.prior_weights,
+            )
+            kl = vamp_prior_kl_loss(
+                z,
+                mu,
+                log_var,
+                pseudo_mu,
+                pseudo_log_var,
+                vamp_weight=self.prior_weights,
+            )
+            mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
+            cur_size = x_batch.size(0)
+            total_mse = mse.item() / cur_size
+            kl_div = kl.mean().item()
+            return loss.item(), kl_div, total_mse
 
     def reproduce_data(
         self, data: np.ndarray, batch_size: int, n_batch: int

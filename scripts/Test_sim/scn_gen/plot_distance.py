@@ -97,6 +97,7 @@ def main() -> None:
     og_dists = select_dist(
         og_traff_path, og_distance, chosen_labels=chosen_labels
     )
+    # print(og_dists)
     print(og_dists[0][next(iter(og_dists[0]))].keys())
     distances_list = [og_dists[0]]
     for file_name in file_paths:
