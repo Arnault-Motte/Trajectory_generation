@@ -41,6 +41,13 @@ def main() -> int:
         default="",
         help="Path and name of the file where to save the weights of the model",
     )
+
+    praser.add_argument(
+        "--loss_file",
+        type=str,
+        default="",
+        help="Path and name of the file where to save the weights of the model",
+    )
     praser.add_argument(
         "--typecode",
         type=str,
@@ -188,6 +195,10 @@ def main() -> int:
         f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f} "
     )
 
+    with open(args.loss_file,"a") as file:
+        if os.stat(args.loss_file).st_size == 0:
+            file.write("Model file, Data file, Dataset Typecodes, Selected Typecode, Total loss, KL, log likelihood, MSE \n")
+        file.write(f'{args.model}, {args.file}, {args.typecodes} ,{args.typecode}, {val_loss}, {val_kl}, {val_loss + val_kl}, {val_recons} \n')
     return 0
 
 
