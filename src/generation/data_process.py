@@ -684,3 +684,30 @@ def combine_save(traffs: list[Traffic], path: str) -> None:
     final_traff: Traffic = sum(traffs)
     final_traff.to_pickle(path)
     return
+
+def clean_data(traffic : Traffic, scaler: MinMaxScaler,columns: list) -> np.ndarray:
+        flights = []
+        for flight in traffic:
+            data = flight.data
+            data = data[columns]
+            np_data = data.to_numpy()
+            flights.append(np_data)
+            # create data loader
+
+        trajectories = np.stack(flights).astype(np.float32)
+
+        # Store the original shape for later reconstruction
+        original_shape = (
+            trajectories.shape
+        )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
+
+        # Reshape to 2D for scaling: each row is an observation
+        trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
+
+        # Initialize and fit the scaler
+        trajectories_scaled = scaler.transform(trajectories_reshaped)
+
+        # Reshape back to the original dimensions
+        trajectories_scaled = trajectories_scaled.reshape(original_shape)
+
+        return trajectories_scaled
