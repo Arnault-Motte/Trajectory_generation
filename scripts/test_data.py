@@ -20,10 +20,10 @@ def main() -> int:
     print(device)
     ## Getting the data
 
-    data_cleaner = Data_cleaner("data_orly/data/takeoffs_LFPO_07.pkl",airplane_types_num=3)
+    data_cleaner = Data_cleaner("data_orly/data/takeoffs_LFPO_07.pkl",airplane_types_num=10)
     displayer = Displayer(data_clean=data_cleaner)
     
-    displayer.plot_distribution_typecode('/home/arnault/traffic/data_orly/figures/airplane_models_distrib_stacked_take_off_7_3.png','/home/arnault/traffic/data_orly/figures/airplane_models_distrib_take_off_7_3.png',hist=True)
+    displayer.plot_distribution_typecode('/home/arnault/traffic/data_orly/figures/airplane_models_distrib_stacked_take_off_7_10_1.png','/home/arnault/traffic/data_orly/figures/airplane_models_distrib_take_off_7_10_2.png',hist=True)
 
 
     return 0

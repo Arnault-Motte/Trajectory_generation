@@ -2,7 +2,6 @@ import sys  # noqa: I001
 import os
 
 
-
 current_path = os.getcwd()
 sys.path.append(os.path.abspath(current_path))
 
@@ -38,7 +37,7 @@ def main() -> int:
     praser.add_argument(
         "--num_flights",
         nargs="+",
-        type=int,
+        type=float,
         default="",
         help="Num of flight for each chosen label",
     )
@@ -68,11 +67,14 @@ def main() -> int:
     praser.add_argument(
         "--cuda", type=int, default=0, help="Index of the GPU to be used"
     )
-
     praser.add_argument(
-        "--scale", type=float, default=1, help="inital scale"
+        "--balanced",
+        type=int,
+        default=0,
+        help="1 if we want to take num flight corresponding to teh pourcentage of the last label num_flights",
     )
 
+    praser.add_argument("--scale", type=float, default=1, help="inital scale")
 
     args = praser.parse_args()
 
@@ -104,6 +106,15 @@ def main() -> int:
     list_traff = return_traff_per_typecode(traff, args.typecodes)
     n_f = args.num_flights
     if args.num_flights != "":  # sampling some part
+        if 1.0 >= n_f[0] > 0.0:  # in case we want %
+            if not args.balanced:
+                n_f = [
+                    int(n_f[i] * len(list_traff[i])) for i in range(len(list_traff))
+                ]
+            else:
+                n_f = [
+                    int(n_f[i] * len(list_traff[-1])) for i in range(len(list_traff)) #help having a balanced data
+                ]
         combined_traff: Traffic = sum(
             [
                 list_traff[i].sample(n_f[i]) if n_f[i] != -1 else list_traff[i]
@@ -113,8 +124,8 @@ def main() -> int:
         combined_traff.to_pickle(args.data_save)
     else:
         combined_traff = traff
-    
-    print('yo')
+
+    print("yo")
 
     data_cleaner = Data_cleaner(
         traff=combined_traff,
@@ -123,8 +134,6 @@ def main() -> int:
     )
 
     data = data_cleaner.clean_data()
-
-
 
     ##Getting the model
     seq_len = 200
@@ -145,34 +154,33 @@ def main() -> int:
     labels = data_cleaner.return_labels()
     labels_dim = labels.shape[1]
 
-    
     model = CVAE_TCN_Vamp(
-            in_channels,
-            output_channels,
-            latent_dim,
-            kernel_size,
-            stride,
-            dilatation,
-            dropout,
-            number_of_block,
-            pooling_factor,
-            pooling_factor,
-            label_dim=labels_dim,
-            label_latent=labels_latent,
-            seq_len=seq_len,
-            pseudo_input_num=pseudo_input_num,
-            early_stopping=True,
-            patience=patience,
-            min_delta=min_delta,
-            temp_save=f"best_model{args.cuda}.pth",
-            conditioned_prior=True,
-            num_worker=6,
-            init_std=args.scale,
-        ).to(device)
+        in_channels,
+        output_channels,
+        latent_dim,
+        kernel_size,
+        stride,
+        dilatation,
+        dropout,
+        number_of_block,
+        pooling_factor,
+        pooling_factor,
+        label_dim=labels_dim,
+        label_latent=labels_latent,
+        seq_len=seq_len,
+        pseudo_input_num=pseudo_input_num,
+        early_stopping=True,
+        patience=patience,
+        min_delta=min_delta,
+        temp_save=f"best_model{args.cuda}.pth",
+        conditioned_prior=True,
+        num_worker=6,
+        init_std=args.scale,
+    ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data,labels,epochs=1000, lr=1e-3, batch_size=500)
+    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
     model.save_model(args.weights)
     return 0
 

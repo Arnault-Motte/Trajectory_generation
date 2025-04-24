@@ -74,9 +74,9 @@ def traffic_only_chosen(
     data = traff.data
 
     typecodes = [flight.typecode for flight in traff]
-    data["typecode"] = [
-        typecode for typecode in typecodes for _ in range(seq_len)
-    ]
+    # data["typecode"] = [
+    #     typecode for typecode in typecodes for _ in range(seq_len)
+    # ]
     num_typecodes = Counter(typecodes)
     ordered_typecodes = [
         typecode
@@ -120,6 +120,8 @@ class Data_cleaner:
             and "typecode" not in self.basic_traffic_data.data.columns
         ):
             self.basic_traffic_data = self.basic_traffic_data.aircraft_data()
+        
+        #print("first test 50", self.basic_traffic_data["394c0f"].data)
 
         self.file_names = file_names
         self.total = total
@@ -141,6 +143,7 @@ class Data_cleaner:
                 )
             )
         print(chosen_typecodes_temp)
+        #print("second test 50", self.basic_traffic_data["394c0f"].data)
         # save the chose types and their order
         self.chosen_types = (
             chosen_typecodes_temp
