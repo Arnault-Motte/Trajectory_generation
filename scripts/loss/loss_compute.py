@@ -185,7 +185,7 @@ def main() -> int:
         )
         if (len(traff_test) != 0):
             test_loss, test_kl, test_recons = model.compute_loss(
-                test_data, test_labels
+                test_data, test_labels_spec
             )
     else:
         model = VAE_TCN_Vamp(
