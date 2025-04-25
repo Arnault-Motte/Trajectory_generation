@@ -150,11 +150,19 @@ def main() -> int:
     if traff_test != None:
         print(len(traff_test))
         test_data_ar = clean_data(traff_test,data_cleaner.scaler,data_cleaner.columns)
+        print(test_data_ar.shape)
         mask = (test_data_ar > 1) | (test_data_ar < -1)
-        rows_with_condition = np.any(mask, axis=1)
+        rows_with_condition = np.any(mask, axis=(1,2))
         count = np.sum(rows_with_condition)
         print("wierd values : ", count)
+        good_rows = ~rows_with_condition
+        test_data_ar = test_data_ar[good_rows]
+        # weird_rows = test_data_ar[rows_with_condition]  # shape (?, 200, 4)
+        # print("Shape of weird rows:", weird_rows.shape)
+        # test_data_ar = weird_rows
         test_data = torch.tensor(test_data_ar, dtype=torch.float32).to(device)
+
+        
     else:
         test_data = torch.Tensor([]).to(device)
 
