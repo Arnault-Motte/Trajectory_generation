@@ -416,6 +416,8 @@ class Data_cleaner:
     def clean_data_specific(
         self, data_to_clean, fit_scale: bool = True
     ) -> np.ndarray:
+        if data_to_clean is None:
+            return np.array([])
         flights = []
         for flight in data_to_clean:
             data = flight.data

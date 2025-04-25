@@ -32,8 +32,8 @@ def main() -> None:
     parser.add_argument(
         "--scene_file",
         type=str,
-        default="sim.scn",
-        help="Path of the scene file",
+        default="",
+        help="Name of the scene file",
     )
 
     parser.add_argument(
@@ -63,8 +63,6 @@ def main() -> None:
         default="data_orly/data/takeoffs_LFPO_07.pkl",
         help="path to the data",
     )
-
-    
 
     args = parser.parse_args()
 
@@ -161,8 +159,10 @@ def main() -> None:
     s = Simulator(t)
 
     chosen_type_codes_string = "_".join(data_cleaner.chosen_types)
+    folder =  args.scene_file + "/"  if args.scene_file != "" else ""
     name_path = (
-        str(args.weight_file).split("/")[-1].split(".")[0]
+        folder 
+        +str(args.weight_file).split("/")[-1].split(".")[0]
         + "_"
         + chosen_type_codes_string
         + "_"
@@ -172,15 +172,13 @@ def main() -> None:
         + "_"
         + str(args.nf)
     )
-    traff_file = (
-        "data_orly/src/generation/saved_traff/"
-        + name_path
-        + ".pkl"
-    )
+    traff_file = "data_orly/src/generation/saved_traff/" + name_path + ".pkl"
     t.to_pickle(traff_file)
     path = "data_orly/scn/" + name_path + ".scn"
     second_path = ""
-    s.scenario_create(path, name_path, load_file=second_path,typecode = args.typecode_to_gen)
+    s.scenario_create(
+        path, name_path, load_file=second_path, typecode=args.typecode_to_gen
+    )
 
     print("end")
 

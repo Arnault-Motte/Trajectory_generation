@@ -107,84 +107,59 @@ def main() -> int:
     data = data_cleaner.clean_data()
     labels = data_cleaner.return_labels()
 
-    
-    
-   
-    
-
-    
     label_data = data_cleaner.return_typecode_array(args.typecode).to(device)
     print("total ",label_data.shape)
-    # labels_spec = torch.Tensor(
-    #     [
-    #         data_cleaner.one_hot.transform(args.typecode)
-    #         for i in range(len(label_data))
-    #     ]
-    # ).to(device)
+
     labels_ar = np.array([args.typecode for _ in range(len(label_data))]).reshape(-1, 1)
     labels_ar = data_cleaner.one_hot.transform(labels_ar)
-    #print(labels_ar)
     labels_spec = torch.Tensor(labels_ar).to(device)
-    
-    
+
 
      #prepare test data
-    print(data_cleaner.basic_traffic_data.data.columns)
     print(args.typecode)
     selected_id = list(data_cleaner.return_flight_id_for_label(args.typecode))
     print(len(selected_id))
     
     traff_test = Traffic.from_file(args.origin)
+
+
     if "typecode" not in traff_test.data.columns:
         traff_test = traff_test.aircraft_data()
 
 
-    # other_test = Traffic.from_file("data_orly/data/sampled_data/combined_data/A320_A321_all.pkl")
-    # print("True test all", other_test["394c0f"].typecode," ",other_test["AFR11NJ_145"].typecode)
-    # print("True test all", other_test["394c0f"].data)
-    # print("True test ref", traff_test["394c0f"].typecode," ",traff_test["AFR11NJ_145"].typecode)
-    # print("True test ref", traff_test["394c0f"].data)
-    # print("True test 50", data_cleaner.basic_traffic_data["394c0f"].typecode," ",data_cleaner.basic_traffic_data["AFR11NJ_145"].typecode)
-
-    # print("True test 50", data_cleaner.basic_traffic_data["394c0f"].data)
-    # print("True test 50", data_cleaner.basic_traffic_data["AFR11NJ_145"].data)
-
-    # last_test = Traffic.from_file("data_orly/data/sampled_data/combined_data/A320_A321_50.pkl")
-
-    # print("last test 50", last_test["394c0f"].data)
-
-    # traff_test_2 = traff_test.query(f'typecode != "{args.typecode}"')
-    # traff_tests_2_save = traff_test_2[selected_id]
-    # print(traff_test_2.data)
-    # traff_tests_2_save.to_csv("data_orly/test.csv")
-    # data_cleaner.basic_traffic_data[selected_id].to_csv("data_orly/test2.csv")
-
-
-
-    # wtf = data_cleaner.basic_traffic_data.merge(traff_test.data, on = 'flight_id',how= 'inner')
-    # final = wtf.query('typecode_x != typecode_y')
-    # print(final[0].data.head(2))
-    # final.to_csv("data_orly/test.csv")
-
-
-
-
+    print(set([f.typecode for f in traff_test[selected_id]]))
+    print(traff_test[0:20])
     traff_test = traff_test.query(f'flight_id not in {selected_id}') #retourne tout
+    print(len(traff_test))
 
-    test_cleaner = Data_cleaner(
-        traff=traff_test,
-        columns=columns,
-        chosen_typecodes=args.typecodes,
-    )
-    data_test = test_cleaner.clean_data()
-    labels_test = test_cleaner.return_labels()
+    # test_cleaner = Data_cleaner(
+    #     traff=traff_test,
+    #     columns=columns,
+    #     chosen_typecodes=args.typecodes,
+    # )
 
-    test_data = test_cleaner.return_typecode_array(args.typecode).to(device)
+    #select only the typecodes of interest
+    
+    traff_test: None | Traffic = traff_test.query(f'typecode == "{args.typecode}"')
+
+
+    #print(len(traff_test))
+    #scale the data with the right scaler, otherwise it won't work
+
+
+    if traff_test != None:
+        print(len(traff_test))
+        test_data_ar = clean_data(traff_test,data_cleaner.scaler,data_cleaner.columns)
+        mask = (test_data_ar > 1) | (test_data_ar < -1)
+        rows_with_condition = np.any(mask, axis=1)
+        count = np.sum(rows_with_condition)
+        print("wierd values : ", count)
+        test_data = torch.tensor(test_data_ar, dtype=torch.float32).to(device)
+    else:
+        test_data = torch.Tensor([]).to(device)
 
 
     if len(test_data) != 0:
-
-        test_data = test_cleaner.return_typecode_array(args.typecode).to(device)
         test_labels = np.array([args.typecode for _ in range(len(test_data))]).reshape(-1, 1)
         test_labels = data_cleaner.one_hot.transform(test_labels)
         test_labels_spec = torch.Tensor(test_labels).to(device)
