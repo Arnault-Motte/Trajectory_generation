@@ -43,6 +43,12 @@ def main() -> int:
     praser.add_argument(
         "--scale", type=float, default=1, help="inital scale"
     )
+    praser.add_argument(
+        "--l_dim", type=int, default=64, help="inital scale"
+    )
+    praser.add_argument(
+        "--pseudo_in", type=int, default=800, help="pseudo inputs num"
+    )
 
     args = praser.parse_args()
 
@@ -78,14 +84,14 @@ def main() -> int:
     seq_len = 200
     in_channels = len(data_cleaner.columns)
     output_channels = 64
-    latent_dim = 64
+    latent_dim = args.l_dim
     pooling_factor = 10
     stride = 1
     number_of_block = 4
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 800
+    pseudo_input_num = args.pseudo_in 
     patience = 30
     min_delta = -100
     print(in_channels)

@@ -1,3 +1,4 @@
+from collections import Counter
 import torch
 import torch.distributions as distrib
 import torch.nn as nn
@@ -8,9 +9,82 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset, random_split
 
 import numpy as np
+from tqdm import tqdm
 from data_orly.src.core.early_stop import Early_stopping
 from data_orly.src.core.loss import *
 from data_orly.src.core.networks import *
+
+
+def compute_class_weights(data_loader: DataLoader, type: str = "raw") -> dict:
+    """
+    Computes the class weights for each label in the data
+    """
+
+    # Initialize a dictionary to store the counts of each label
+    label_counts = {}
+
+    # Iterate through the DataLoader
+    for _, labels in tqdm(data_loader, desc="computing data weights"):
+        for label in labels:
+            label = tuple(
+                label.tolist()
+            )  # Convert label to a scalar (if it's a tensor)
+            if label not in label_counts:
+                label_counts[label] = 0
+            label_counts[label] += 1
+
+    # Compute the total number of samples
+    total_samples = sum(label_counts.values())
+
+    # Compute the class weights
+    if type == "raw":
+        class_weights = {
+            label: total_samples / count
+            for label, count in label_counts.items()
+        }
+    else:
+        class_weights = {
+            label: np.log(1 + total_samples / count)
+            for label, count in label_counts.items()
+        }
+    print(class_weights)
+    return class_weights
+
+
+def divide_dataloader_per_label(
+    dl: DataLoader, batch_size: int = 500
+) -> dict[tuple, DataLoader]:
+    # Dictionary to store data grouped by label
+    data_by_label = {}
+
+    # Iterate through the DataLoader
+    for data, labels in dl:
+        # print(labels)
+        for x, label in zip(data, labels):
+            label = tuple(
+                label.tolist()
+            )  # Convert label to a scalar (if it's a tensor)
+            if label not in data_by_label:
+                data_by_label[label] = []
+            data_by_label[label].append(x)
+
+    # Create a DataLoader for each label
+    dataloaders = {}
+    for label, data in data_by_label.items():
+        # Convert the list of tensors to a TensorDataset
+        dataset = TensorDataset(
+            torch.stack(data),
+            torch.tensor([list(label)] * len(data)).to(data[0].device),
+        )
+        dataloaders[label] = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True
+        )
+
+    # first_batch = next(iter(dataloader))
+    # inputs, labels = first_batch
+    # print(inputs.shape)
+
+    return dataloaders
 
 
 ## Encoder
@@ -110,6 +184,7 @@ class TCN_decoder(nn.Module):
         x = self.upsample(x)
         x = self.tcn(x)
         return x
+
 
 class Pseudo_labels_generator(nn.Module):
     """
@@ -214,8 +289,10 @@ class CVAE_TCN_Vamp(nn.Module):
         temp_save: str = "best_model.pth",
         num_worker: int = 4,
         init_std: float = 1,
+        d_weight: bool = False,
     ):
         super(CVAE_TCN_Vamp, self).__init__()
+        self.d_weight = d_weight
         self.num_worker = num_worker
         self.temp_save = temp_save
         self.labels_encoder_broadcast = Label_mapping(
@@ -264,7 +341,9 @@ class CVAE_TCN_Vamp(nn.Module):
         self.seq_len = seq_len
         self.trained = False
         self.in_channels = in_channels
-        self.log_std = nn.Parameter(torch.Tensor([init_std]), requires_grad=True)
+        self.log_std = nn.Parameter(
+            torch.Tensor([init_std]), requires_grad=True
+        )
 
         self.prior_weights = nn.Parameter(
             torch.ones((1, pseudo_input_num)), requires_grad=True
@@ -389,6 +468,10 @@ class CVAE_TCN_Vamp(nn.Module):
         dataloader_train, data_loader_val = get_data_loader(
             x, labels, batch_size, num_worker=self.num_worker
         )
+        data_loaders_val = divide_dataloader_per_label(data_loader_val)
+        class_weights = (
+            compute_class_weights(dataloader_train) if self.d_weight else None
+        )
         scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
         early_stopping = (
             Early_stopping(
@@ -417,8 +500,22 @@ class CVAE_TCN_Vamp(nn.Module):
                     if self.prior_weights_layers
                     else self.prior_weights
                 )
-                loss = VAE_vamp_prior_loss(
+                lbl_weights = (
+                    torch.Tensor(
+                        [
+                            class_weights[tuple(label.tolist())]
+                            for label in labels_batch
+                        ]
+                    ).to(next(self.parameters()).device)
+                    if self.d_weight
+                    else torch.ones(x_batch.size(0)).to(
+                        next(self.parameters()).device
+                    )
+                )
+                # print(Counter(lbl_weights.tolist()).most_common())
+                loss = CVAE_vamp_prior_loss_label_weights(
                     x_batch.permute(0, 2, 1),
+                    lbl_weights,
                     x_recon,
                     z,
                     mu,
@@ -428,6 +525,17 @@ class CVAE_TCN_Vamp(nn.Module):
                     scale=self.log_std,
                     vamp_weight=prior_weight,
                 )
+                # loss = VAE_vamp_prior_loss(
+                #     x_batch.permute(0, 2, 1),
+                #     x_recon,
+                #     z,
+                #     mu,
+                #     log_var,
+                #     pseudo_mu,
+                #     pseudo_log_var,
+                #     scale=self.log_std,
+                #     vamp_weight=prior_weight,
+                # )
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -468,6 +576,16 @@ class CVAE_TCN_Vamp(nn.Module):
                 print(
                     f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f},scale: {self.log_std.item():.4f} "
                 )
+                print("Per data val loss")
+                for lb, d_l in data_loaders_val.items():
+                    val_loss, val_kl, val_recons = self.compute_val_loss(d_l)
+                    val_loss = val_loss / len(d_l)
+                    val_kl = val_kl / len(d_l)
+                    val_recons = val_recons / len(d_l)
+                    print(
+                        f"Label {lb} : Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f},scale: {self.log_std.item():.4f} "
+                    )
+
             if epoch == epochs - 1:
                 print(
                     f"Epoch [{epoch + 1}/{epochs}]\n Train set, Loss: {total_loss:.4f},MSE: {total_mse:.4f}, KL: {kl_div:.4f}, Log_like: {total_loss - kl_div:.4f} "
@@ -493,7 +611,7 @@ class CVAE_TCN_Vamp(nn.Module):
                     break
         if self.early_stopping:
             self.load_model(early_stopping.path)
-            print('|--Best model loaded--|')
+            print("|--Best model loaded--|")
         self.trained = True
 
     def reproduce(self, x: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -505,43 +623,49 @@ class CVAE_TCN_Vamp(nn.Module):
             raise Exception("Model not trained yet")
         self.eval()
         return self.forward(x, labels)[0].permute(0, 2, 1)
-    
 
-    def compute_loss(self,data:torch.Tensor,labels:torch.Tensor):
-            x_batch = data.to(next(self.parameters()).device)
-            labels = labels.to(next(self.parameters()).device)
-            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
-                x_batch, labels
-            )
-            prior_weights = (
-                self.prior_weights_layers(labels)
-                if self.prior_weights_layers
-                else self.prior_weights
-            )
-            loss = VAE_vamp_prior_loss(
-                x_batch.permute(0, 2, 1),
-                x_recon,
-                z,
-                mu,
-                log_var,
-                pseudo_mu,
-                pseudo_log_var,
-                scale=self.log_std,
-                vamp_weight=prior_weights,
-            )
-            kl = vamp_prior_kl_loss(
-                z,
-                mu,
-                log_var,
-                pseudo_mu,
-                pseudo_log_var,
-                vamp_weight=prior_weights,
-            )
-            mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
-            cur_size = x_batch.size(0)
-            total_mse = mse.item() / cur_size
-            kl_div = kl.mean().item()
-            return loss.item(), kl_div, total_mse
+    def compute_loss(self, data: torch.Tensor, labels: torch.Tensor):
+        x_batch = data.to(next(self.parameters()).device)
+        labels = labels.to(next(self.parameters()).device)
+        x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
+            x_batch, labels
+        )
+        prior_weights = (
+            self.prior_weights_layers(labels)
+            if self.prior_weights_layers
+            else self.prior_weights
+        )
+        loss = VAE_vamp_prior_loss(
+            x_batch.permute(0, 2, 1),
+            x_recon,
+            z,
+            mu,
+            log_var,
+            pseudo_mu,
+            pseudo_log_var,
+            scale=self.log_std,
+            vamp_weight=prior_weights,
+        )
+        kl = vamp_prior_kl_loss(
+            z,
+            mu,
+            log_var,
+            pseudo_mu,
+            pseudo_log_var,
+            vamp_weight=prior_weights,
+        )
+        mse = reconstruction_loss(x_batch.permute(0, 2, 1), x_recon)
+        cur_size = x_batch.size(0)
+        total_mse = mse.item() / cur_size
+        kl_div = kl.mean().item()
+        return loss.item(), kl_div, total_mse
+
+    def compute_val_loss_per_label(
+        self, data_loader_list: list[DataLoader]
+    ) -> list[tuple[float, float, float]]:
+        return [
+            self.compute_val_loss(data_load) for data_load in data_loader_list
+        ]
 
     def compute_val_loss(
         self, val_data: DataLoader
@@ -657,11 +781,11 @@ class CVAE_TCN_Vamp(nn.Module):
                 if self.prior_weights_layers
                 else self.prior_weights
             )
-            #print("prior_weight", prior_weights.shape)
-            
+            # print("prior_weight", prior_weights.shape)
+
             mu, log_var = self.pseudo_inputs_latent()
-            #print("mu", mu.shape)
-            #print("log_var ", log_var.shape)
+            # print("mu", mu.shape)
+            # print("log_var ", log_var.shape)
         distrib = create_mixture(
             mu, log_var, vamp_weight=prior_weights.squeeze(0)
         )
@@ -678,7 +802,7 @@ class CVAE_TCN_Vamp(nn.Module):
         device = next(self.parameters()).device
         samples = []
         for _ in range(0, num_samples, batch_size):
-            #print("sizes fun : ", labels.shape, batch_size)
+            # print("sizes fun : ", labels.shape, batch_size)
             current_batch_size = min(batch_size, num_samples - len(samples))
             z = self.sample_from_conditioned_prior(
                 current_batch_size, labels[0]

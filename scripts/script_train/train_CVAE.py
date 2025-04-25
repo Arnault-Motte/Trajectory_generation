@@ -68,6 +68,15 @@ def main() -> int:
         "--cuda", type=int, default=0, help="Index of the GPU to be used"
     )
     praser.add_argument(
+        "--weights_data", type=int, default=0, help="True if you want to weight the data"
+    )
+    praser.add_argument(
+        "--pseudo_in", type=int, default=800, help="True if you want to weight the data"
+    )
+    praser.add_argument(
+        "--l_dim", type=int, default=64, help="True if you want to weight the data"
+    )
+    praser.add_argument(
         "--balanced",
         type=int,
         default=0,
@@ -139,14 +148,14 @@ def main() -> int:
     seq_len = 200
     in_channels = len(data_cleaner.columns)
     output_channels = 64
-    latent_dim = 64
+    latent_dim =args.l_dim
     pooling_factor = 10
     stride = 1
     number_of_block = 4
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 800
+    pseudo_input_num = args.pseudo_in  
     patience = 30
     min_delta = -100
     print(in_channels)
@@ -176,6 +185,7 @@ def main() -> int:
         conditioned_prior=True,
         num_worker=6,
         init_std=args.scale,
+        d_weight=args.weights_data,     
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))

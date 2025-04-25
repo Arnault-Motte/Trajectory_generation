@@ -112,3 +112,32 @@ def VAE_vamp_prior_loss(
         z, mu, logvar, pseudo_mu, pseudo_log_var, vamp_weight
     )
     return recon_loss.mean() + beta * kl_loss.mean()
+
+
+def CVAE_vamp_prior_loss_label_weights(
+    x: torch.Tensor,
+    weights:torch.Tensor,
+    x_recon: torch.Tensor,
+    z: torch.Tensor,
+    mu: torch.Tensor,
+    logvar: torch.Tensor,
+    pseudo_mu: torch.Tensor,
+    pseudo_log_var: torch.Tensor,
+    scale: torch.Tensor = None,
+    vamp_weight: torch.Tensor = None,
+    beta: float = 1,
+) -> torch.Tensor:
+    """
+    ELBO for the VampPrior implementations
+    """
+
+    recon_loss = negative_log_likelihood(x, x_recon, scale)
+    # Compute KL divergence
+    batch_size = x.size(0)
+    kl_loss = vamp_prior_kl_loss(
+        z, mu, logvar, pseudo_mu, pseudo_log_var, vamp_weight
+    )
+    # print("recon_loss shape", recon_loss.shape)
+    # print("kl_loss shape", kl_loss.shape)
+    loss =weights * (recon_loss + beta * kl_loss)
+    return loss.mean()

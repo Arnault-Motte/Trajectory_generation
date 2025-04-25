@@ -1,3 +1,4 @@
+from collections import Counter
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,6 +39,8 @@ def get_data_loader(
     test_loader = DataLoader(
         val_data, batch_size=batch_size, shuffle=shuffle, num_workers=num_worker
     )
+    if labels is not None:
+        print("Val repartition :",Counter([tuple(x[1].tolist()) for x in val_data]))
     return train_loader, test_loader
 
 

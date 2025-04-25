@@ -157,6 +157,7 @@ def main() -> int:
         print("wierd values : ", count)
         good_rows = ~rows_with_condition
         test_data_ar = test_data_ar[good_rows]
+        print(len(test_data_ar))
         # weird_rows = test_data_ar[rows_with_condition]  # shape (?, 200, 4)
         # print("Shape of weird rows:", weird_rows.shape)
         # test_data_ar = weird_rows
@@ -172,7 +173,8 @@ def main() -> int:
         test_labels = data_cleaner.one_hot.transform(test_labels)
         test_labels_spec = torch.Tensor(test_labels).to(device)
 
-
+    vram_used = torch.cuda.memory_allocated(device)
+    print(f"Current VRAM usage: {vram_used / (1024 ** 2):.2f} MB")
 
     ##Getting the model
     seq_len = 200
@@ -217,6 +219,8 @@ def main() -> int:
             init_std=1,
         ).to(device)
         model.load_model(args.model)
+        vram_used = torch.cuda.memory_allocated(device)
+        print(f"Current VRAM usage: {vram_used / (1024 ** 2):.2f} MB")
         print(label_data.shape)
         val_loss, val_kl, val_recons = model.compute_loss(
             label_data, labels_spec
@@ -245,11 +249,15 @@ def main() -> int:
             init_std=1,
         ).to(device)
         model.load_model(args.model)
+        vram_used = torch.cuda.memory_allocated(device)
+        print(f"Current VRAM usage: {vram_used / (1024 ** 2):.2f} MB")
         val_loss, val_kl, val_recons = model.compute_loss(label_data)
         if (len(test_data) != 0):
             test_loss, test_kl, test_recons = model.compute_loss(test_data)
 
     print("n_traj =", len(label_data))
+    vram_used = torch.cuda.memory_allocated(device)
+    print(f"Current VRAM usage: {vram_used / (1024 ** 2):.2f} MB")
 
     ## Training the model
     
