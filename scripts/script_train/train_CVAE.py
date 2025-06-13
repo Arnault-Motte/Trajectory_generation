@@ -16,6 +16,8 @@ import torch
 from data_orly.src.generation.data_process import (
     Data_cleaner,
     return_traff_per_typecode,
+    filter_missing_values,
+    compute_time_delta,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
@@ -38,7 +40,7 @@ def main() -> int:
         "--num_flights",
         nargs="+",
         type=float,
-        default="",
+        default=[],
         help="Num of flight for each chosen label",
     )
     praser.add_argument(
@@ -57,8 +59,8 @@ def main() -> int:
         "--typecodes",
         type=str,
         nargs="+",
-        default="",
-        help="Typcodes to train the model",
+        default=[],
+        help="Typecodes to train the model",
     )
     praser.add_argument(
         "--vrate", type=int, default=0, help="Use vertical rate"
@@ -68,13 +70,29 @@ def main() -> int:
         "--cuda", type=int, default=0, help="Index of the GPU to be used"
     )
     praser.add_argument(
-        "--weights_data", type=int, default=0, help="True if you want to weight the data"
+        "--weights_data",
+        type=int,
+        default=0,
+        help="True if you want to weight the data",
     )
     praser.add_argument(
-        "--pseudo_in", type=int, default=800, help="True if you want to weight the data"
+        "--pseudo_in",
+        type=int,
+        default=800,
+        help="True if you want to weight the data",
     )
     praser.add_argument(
-        "--l_dim", type=int, default=64, help="True if you want to weight the data"
+        "--l_dim",
+        type=int,
+        default=64,
+        help="True if you want to weight the data",
+    )
+
+    praser.add_argument(
+        "--max_num_flights",
+        type=int,
+        default=-1,
+        help="Limits the number of flights to be considered",
     )
     praser.add_argument(
         "--balanced",
@@ -83,16 +101,25 @@ def main() -> int:
         help="1 if we want to take num flight corresponding to teh pourcentage of the last label num_flights",
     )
 
+    praser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="1 if the pseudo inputs must be conditioned",
+    )
+
     praser.add_argument("--scale", type=float, default=1, help="inital scale")
 
     args = praser.parse_args()
 
-    if any(value == "" for value in vars(args).values()):
-        raise ValueError(
-            "At least one argument has not been defined. Only temp can be ignored."
-        )
+    # if any(value == "" for value in vars(args).values()):
+    #     raise ValueError(
+    #         "At least one argument has not been defined. Only temp can be ignored."
+    #     )
 
     vr_rate = bool(args.vrate)
+
+    print("STARTING----------------------------------------------------")
 
     print(sys.path)
     device = torch.device(
@@ -106,24 +133,45 @@ def main() -> int:
 
     print(f"chosen columns : {columns}")
 
-    if len(args.num_flights) != len(args.typecodes) and args.num_flights != "":
+    if len(args.num_flights) != len(args.typecodes) and len(args.num_flights) != 0:
         raise ValueError(
             "You must five as many values for num_flights as typecodes"
         )
 
+    limit_nf = (
+        args.max_num_flights
+    )  # in case we want to limit the number of flights to be considered
+    if limit_nf == -1:
+        limit_nf = float("inf")
+
+    print(limit_nf)
+
     traff = Traffic.from_file(args.data)
-    list_traff = return_traff_per_typecode(traff, args.typecodes)
-    n_f = args.num_flights
-    if args.num_flights != "":  # sampling some part
-        if 1.0 >= n_f[0] > 0.0:  # in case we want %
-            if not args.balanced:
+    print(len(traff))
+    print("Nan values remaining: ",traff.data[columns].isna().any(axis=1).sum())
+
+    if len(args.typecodes) != 0: #limiting the number of labels
+        list_traff = return_traff_per_typecode(traff, args.typecodes)
+        n_f = args.num_flights
+
+    if len(args.num_flights) != 0:  # sampling some part
+        if 1.0 >= n_f[0] > 0.0:  # in case we want %,
+            if (
+                not args.balanced
+            ):  # % of the number of trajectory for each trajectory
                 n_f = [
-                    int(n_f[i] * len(list_traff[i])) for i in range(len(list_traff))
+                    int(n_f[i] * min(len(list_traff[i]), limit_nf))
+                    for i in range(len(list_traff))
                 ]
-            else:
+            else:  # len computed using the % of the last trajectory
                 n_f = [
-                    int(n_f[i] * len(list_traff[-1])) for i in range(len(list_traff)) #help having a balanced data
+                    int(n_f[i] * min(len(list_traff[-1]), limit_nf))
+                    for i in range(
+                        len(list_traff)
+                    )  # help having a balanced data
                 ]
+
+        # Sampling the according number of trajectories
         combined_traff: Traffic = sum(
             [
                 list_traff[i].sample(n_f[i]) if n_f[i] != -1 else list_traff[i]
@@ -135,12 +183,23 @@ def main() -> int:
         combined_traff = traff
 
     print("yo")
+    print(len(combined_traff))
+    print(combined_traff.data.columns)
 
-    data_cleaner = Data_cleaner(
-        traff=combined_traff,
-        columns=columns,
-        chosen_typecodes=args.typecodes,
-    )
+
+    if len(args.typecodes) != 0:
+        data_cleaner = Data_cleaner(
+            traff=combined_traff,
+            columns=columns,
+            chosen_typecodes=args.typecodes,
+        )
+    else :
+        data_cleaner = Data_cleaner(
+            traff=combined_traff,
+            columns=columns,
+            airplane_types_num=10, #limiting to the 10 most commun typecodes
+        )
+
 
     data = data_cleaner.clean_data()
 
@@ -148,14 +207,14 @@ def main() -> int:
     seq_len = 200
     in_channels = len(data_cleaner.columns)
     output_channels = 64
-    latent_dim =args.l_dim
+    latent_dim = args.l_dim
     pooling_factor = 10
     stride = 1
     number_of_block = 4
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = args.pseudo_in  
+    pseudo_input_num = args.pseudo_in
     patience = 30
     min_delta = -100
     print(in_channels)
@@ -185,12 +244,13 @@ def main() -> int:
         conditioned_prior=True,
         num_worker=6,
         init_std=args.scale,
-        d_weight=args.weights_data,     
+        d_weight=bool(args.weights_data),
+        condition_pseudo_inputs=bool(args.cond_pseudo),
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500)
+    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500,step_size=100)
     model.save_model(args.weights)
     return 0
 

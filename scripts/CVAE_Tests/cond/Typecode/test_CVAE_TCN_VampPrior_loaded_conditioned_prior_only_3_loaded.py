@@ -5,6 +5,12 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
 
+current_path = os.getcwd()
+sys.path.append(os.path.abspath(current_path))
+
+print("Current working directory:", current_path)
+print(os.path.dirname(__file__))
+
 
 import torch
 

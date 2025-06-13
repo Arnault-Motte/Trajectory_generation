@@ -52,10 +52,10 @@ def main() -> int:
 
     args = praser.parse_args()
 
-    if any(value == "" for value in vars(args).values()):
-        raise ValueError(
-            "At least one argument has not been defined. Only temp can be ignored."
-        )
+    # if any(value == "" for value in vars(args).values()):
+    #     raise ValueError(
+    #         "At least one argument has not been defined. Only temp can be ignored."
+    #     )
     
     vr_rate = bool(args.vrate)
 

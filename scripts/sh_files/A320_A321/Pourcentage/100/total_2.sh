@@ -8,6 +8,7 @@ uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_o
 uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/A320_A321/100/VAE_A320_A320__800_2000.pkl"  --log_file ""data_orly/sim_logs/A320_A321/100/A320_solo.log"" --ignored "data_orly/scn/A320_A321/100/VAE_A320_A320__800_2000_denied_flight.pkl" --saved_name "A320_A321/100/A320_solo.pkl" --typecodes A320
 uv run python data_orly/scripts/Test_sim/scn_gen/dist_test.py --og_traff "data_orly/src/generation/saved_traff/A320_A321/100/VAE_A321_all_A321__800_2000.pkl"  --log_file ""data_orly/sim_logs/A320_A321/100/A321_solo.log"" --ignored "data_orly/scn/A320_A321/100/VAE_A321_all_A321__800_2000_denied_flight.pkl" --saved_name "A320_A321/100/A321_solo.pkl" --typecodes A321
 
+
 #Plot them
 mkdir -p data_orly/figures/distances/A320_A321
 mkdir -p data_orly/figures/distances/A320_A321/100

@@ -284,7 +284,7 @@ def gen_instruct_f(flight: Flight, nav_p: Flight, path_log: str,typecode: str = 
     acid = f_data.iloc[0]["flight_id"]
     text = cre(
         acid,
-        typecode,
+        typecode if typecode != "0" else f_data.iloc[0]["typecode"] ,
         f_data.iloc[0]["latitude"],
         f_data.iloc[0]["longitude"],
         f_data.iloc[0]["track"],

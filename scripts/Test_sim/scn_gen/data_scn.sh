@@ -1,0 +1,1 @@
+uv run data_orly/scripts/Test_sim/scn_gen/data_scn_gen.py --data /data/data/arnault/data/new_data/TO_LFPO_7_B_train_no_nan.pkl --data_s /data/data/arnault/data/new_data/TO_LFPO_7_B_train_no_nan_subsampled.pkl --scn_file data_orly/scn/true_data_scn.scn --nf 3000 #30000 files in total

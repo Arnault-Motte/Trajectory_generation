@@ -11,16 +11,57 @@ def reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
     """
     return F.mse_loss(x_recon, x, reduction="sum")
 
-
-def negative_log_likelihood(
-    x: torch.Tensor, recon: torch.Tensor, scale: torch.Tensor
+def reconstruction_loss2(
+    x: torch.Tensor,
+    x_recon: torch.Tensor,
+    mask: torch.Tensor = None
 ) -> torch.Tensor:
     """
-    Computes the negative log likelyhood for the given scalar scale.
+    MSE loss with optional masking.
+    """
+    squared_error = (x_recon - x) ** 2  # shape: (batch, seq_len, features)
+
+    if mask is not None:
+        # Expand mask to shape (batch, seq_len, features)
+        mask = mask.unsqueeze(1)           # shape: (batch, 1, features)
+        mask = mask.expand_as(x)           # shape: (batch, seq_len, features)
+
+        masked_error = squared_error * mask
+        return masked_error.sum()
+    else:
+        return squared_error.sum()
+
+
+def negative_log_likelihood(
+    x: torch.Tensor,
+    recon: torch.Tensor,
+    scale: torch.Tensor,
+    mask: torch.Tensor = None,
+) -> torch.Tensor:
+    """
+    Computes the negative log likelihood for the given scalar scale.
     """
     mu = recon
     dist = distrib.Normal(mu, scale)
     log_likelihood = dist.log_prob(x)
+
+    if mask is not None:
+        mask = mask.unsqueeze(1) 
+        mask = mask.expand_as(x)
+        # print("not masked ",-log_likelihood.sum(dim=[i for i in range(1, len(x.size()))]).mean())
+        
+        
+        masked_log_prob = log_likelihood * mask
+        # print(log_likelihood.shape)
+        # print("masked ",-masked_log_prob.sum(dim=[i for i in range(1, len(x.size()))]).mean())
+        # print("masked ",-masked_log_prob)
+        # print(-log_likelihood)
+        # input("continue")
+        return -masked_log_prob.sum(dim=[i for i in range(1, len(x.size()))])
+
+    # print("not masked ",-log_likelihood.sum(dim=[i for i in range(1, len(x.size()))]).mean())
+    # print(-log_likelihood)
+    # input("continue")
     return -log_likelihood.sum(dim=[i for i in range(1, len(x.size()))])
 
 
@@ -49,6 +90,9 @@ def create_mixture(
         print("NaN detected in mu")
     if torch.isnan(log_var).any():
         print("NaN detected in log_var")
+
+    # print("loss vamp ", vamp_weight.shape)
+    # print("pseud_in ", mu.shape )
 
     # print("w ", vamp_weight.shape)
     # print("mu ", mu.shape)
@@ -81,10 +125,12 @@ def vamp_prior_kl_loss(
     """
     Computes the kl loss for the vamp_prior implementation
     """
+    # print("Z ", z.shape)
     prior = create_mixture(pseudo_mu, pseudo_log_var, vamp_weight)
     posterior = create_distrib_posterior(mu, log_var)
     log_prior = prior.log_prob(z)
     log_posterior = posterior.log_prob(z)
+    # print("log prob ",log_prior.shape)
     return log_posterior - log_prior
 
 
@@ -100,12 +146,13 @@ def VAE_vamp_prior_loss(
     scale: torch.Tensor = None,
     vamp_weight: torch.Tensor = None,
     beta: float = 1,
+    mask: torch.Tensor = None,
 ) -> torch.Tensor:
     """
     ELBO for the VampPrior implementations
     """
 
-    recon_loss = negative_log_likelihood(x, x_recon, scale)
+    recon_loss = negative_log_likelihood(x, x_recon, scale,mask)
     # Compute KL divergence
     batch_size = x.size(0)
     kl_loss = vamp_prior_kl_loss(
@@ -116,7 +163,7 @@ def VAE_vamp_prior_loss(
 
 def CVAE_vamp_prior_loss_label_weights(
     x: torch.Tensor,
-    weights:torch.Tensor,
+    weights: torch.Tensor,
     x_recon: torch.Tensor,
     z: torch.Tensor,
     mu: torch.Tensor,
@@ -126,12 +173,13 @@ def CVAE_vamp_prior_loss_label_weights(
     scale: torch.Tensor = None,
     vamp_weight: torch.Tensor = None,
     beta: float = 1,
+    mask: torch.Tensor = None,
 ) -> torch.Tensor:
     """
     ELBO for the VampPrior implementations
     """
 
-    recon_loss = negative_log_likelihood(x, x_recon, scale)
+    recon_loss = negative_log_likelihood(x, x_recon, scale, mask)
     # Compute KL divergence
     batch_size = x.size(0)
     kl_loss = vamp_prior_kl_loss(
@@ -139,5 +187,5 @@ def CVAE_vamp_prior_loss_label_weights(
     )
     # print("recon_loss shape", recon_loss.shape)
     # print("kl_loss shape", kl_loss.shape)
-    loss =weights * (recon_loss + beta * kl_loss)
+    loss = weights * (recon_loss + beta * kl_loss)
     return loss.mean()

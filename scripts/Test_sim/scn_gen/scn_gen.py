@@ -43,7 +43,7 @@ def main() -> None:
         "--typecodes",
         nargs="+",
         type=str,
-        default="",
+        default=[],
         help="typecodes of interest",
     )
     parser.add_argument("--typecode_to_gen", type=str, default="")
@@ -64,9 +64,30 @@ def main() -> None:
         help="path to the data",
     )
 
+    parser.add_argument(
+        "--cuda",
+        type=int,
+        default="0",
+        help="Index of the cuda GPU to use",
+    )
+
+    parser.add_argument(
+        "--l_dim",
+        type=int,
+        default=64,
+        help="latent dim of the model",
+    )
+
+    parser.add_argument(
+        "--pseudo_in",
+        type=int,
+        default=800,
+        help="pseudo inputs num",
+    )
+
     args = parser.parse_args()
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() else "cpu")  # noqa: F405
     print(device)
     print(args.typecodes)
     conditional = bool(args.cond)
@@ -78,26 +99,27 @@ def main() -> None:
         columns=columns,
         chosen_typecodes=args.typecodes,
     )
+    print(data_cleaner.chosen_types)
     data = data_cleaner.clean_data()
     print("start")
 
     seq_len = 200
     in_channels = len(data_cleaner.columns)
     output_channels = 64
-    latent_dim = 64
+    latent_dim = args.l_dim
     pooling_factor = 10
     stride = 1
     number_of_block = 4
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = 800  # *1.5
+    pseudo_input_num = args.pseudo_in  # *1.5
     patience = 30
     min_delta = -100
     labels_latent = 16
     labels = data_cleaner.return_labels()
     labels_dim = labels.shape[1]
-    print(conditional)
+    print(labels.shape)
     if not conditional:
         model = VAE_TCN_Vamp(
             in_channels,

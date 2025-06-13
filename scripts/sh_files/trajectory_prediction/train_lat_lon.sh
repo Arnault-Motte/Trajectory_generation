@@ -1,0 +1,6 @@
+# uv run data_orly/scripts/script_train/train_CVAE_split.py --data data_orly/data/landings_LFPO_06.pkl  --weights data_orly/weights/prediction_normal_loss_good_masks_fcl_deco_true_dropout.path --cuda 2 --pseudo_in 1000 --l_dim 64 --scale 1 --labels_l_dim 64 --complexe_w 1 --padding 1 --test_conc 1 --test_conc_msk 1 --loss_full 0 
+# uv run data_orly/scripts/script_train/train_CVAE_split.py --data data_orly/data/landings_LFPO_06.pkl  --weights data_orly/weights/prediction_normal_loss_good_masks_fcl2_deco_true_dropout_no_d.path --cuda 0 --pseudo_in 1000 --l_dim 64 --scale 1 --labels_l_dim 64 --complexe_w 1 --padding 1 --test_conc 1 --test_conc_msk 1 --loss_full 0 
+# uv run data_orly/scripts/script_train/train_CVAE_split.py --data data_orly/data/landings_LFPO_06.pkl  --weights data_orly/weights/prediction_normal_loss_good_masks_fcl2_deco_true_dropout_added_label_full_loss.path --cuda 0 --pseudo_in 1000 --l_dim 64 --scale 1 --labels_l_dim 64 --complexe_w 1 --padding 1 --test_conc 1 --test_conc_msk 1 --loss_full 1 
+
+
+uv run data_orly/scripts/script_train/train_CVAE_split.py --data data_orly/data/landings_LFPO_06.pkl  --weights data_orly/weights/pred_final_fcl_lat_lon.path --f_fcl 1 --cuda 1 --pseudo_in 1000 --l_dim 64 --scale 1 --labels_l_dim 64 --complexe_w 1 --padding 1 --test_conc 1 --test_conc_msk 1 --loss_full 0 --use_lat_lon 1

@@ -27,58 +27,140 @@ from data_orly.src.generation.models.VAE_TCN_VampPrior import (
 )
 from traffic.core import Flight, Traffic
 
+
 ###TEST for seeing the reconstruction of the autoencoder
 def plot_traffic(
-        traffic: Traffic,
-        plot_path: str,
-        background: bool = True,
-    ) -> None:
-        if background:
-            # background elements
-            paris_area = france.data.query("ID_1 == 1000")
-            seine_river = Nominatim.search(
-                "Seine river, France"
-            ).shape.intersection(paris_area.union_all().buffer(0.1))
+    traffic: Traffic,
+    plot_path: str,
+    background: bool = True,
+) -> None:
+    if background:
+        # background elements
+        paris_area = france.data.query("ID_1 == 1000")
+        seine_river = Nominatim.search(
+            "Seine river, France"
+        ).shape.intersection(paris_area.union_all().buffer(0.1))
 
-        with plt.style.context("traffic"):
-            fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
-            traffic.plot(ax, alpha=0.2, color="#4c78a8")
-            plt.savefig(plot_path)
-            plt.show()
+    with plt.style.context("traffic"):
+        fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
+        traffic.plot(ax, alpha=0.7, color="blue")
+        plt.savefig(plot_path)
+        plt.show()
 
-def plot_DTW_SSPD(distances : list[dict],labels:list[str],path:str)->None:
-    fig, axes = plt.subplots(nrows = 2, ncols = 1, figsize = (10,10))
-    #DTW
- 
-    for label,dist in zip(labels,distances):
+
+def plot_DTW_SSPD(distances: list[dict], labels: list[str], path: str) -> None:
+    fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(10, 10))
+    # DTW
+
+    for label, dist in zip(labels, distances):
         sorted_d = np.sort([d["dtw"] for d in dist.values()])
-        cdf = np.arange(1,len(sorted_d)+1) / len(sorted_d)
-        axes[0].plot(sorted_d,cdf,label = label)
+        cdf = np.arange(1, len(sorted_d) + 1) / len(sorted_d)
+        axes[0].plot(sorted_d, cdf, label=label)
 
     axes[0].set_title("DTW")
     axes[0].set_xlabel("Distance")
     axes[0].set_ylabel("Cumulative probability")
-    axes[0].legend(title = "Generation method")
+    axes[0].legend(title="Generation method")
     axes[0].grid(True)
-    axes[0].set_xlim(0,1200000)
-    
+    axes[0].set_xlim(0, 1200000)
 
-    for label,dist in zip(labels,distances):
+    for label, dist in zip(labels, distances):
         sorted_d = np.sort([d["sspd"] for d in dist.values()])
-        cdf = np.arange(1,len(sorted_d)+1) / len(sorted_d)
-        axes[1].plot(sorted_d,cdf,label = label)
+        cdf = np.arange(1, len(sorted_d) + 1) / len(sorted_d)
+        axes[1].plot(sorted_d, cdf, label=label)
 
     axes[1].set_title("SSPD")
     axes[1].set_xlabel("Distance")
     axes[1].set_ylabel("Cumulative probability")
-    axes[1].legend(title = "Generation method")
+    axes[1].legend(title="Generation method")
     axes[1].grid(True)
-    axes[1].set_xlim(0,16000)
+    axes[1].set_xlim(0, 16000)
 
     plt.tight_layout()
     plt.savefig(path)
     plt.show()
 
+
+def plot_distribution_typecode(
+    data: Traffic, path1: str, path2: str, hist: bool = False
+) -> None:
+    if hist:
+        path1 = path1.split(".")[0] + "_hist.png"
+        path2 = path2.split(".")[0] + "_hist.png"
+
+    print(data.data.head(5))
+    print(len(data))
+    data = compute_vertical_rate(data)
+    typecodes = data.data["typecode"].unique()  # list all typecodes
+    map_typecode_vrate = {}
+    for typecode in typecodes:
+        d = data.query(f"typecode == '{typecode}'")
+        print(typecode, "----------------------------------")
+        print(len(d))
+        l_og = [f.vertical_rate_mean for f in d]
+        print("og len: ", len(l_og))
+        # print(l_og[:10])
+        map_typecode_vrate[typecode] = [el for el in l_og if 4000 > el > 0]
+        print("Len after bounding: ", len(map_typecode_vrate[typecode]))
+
+    # print(map_typecode_vrate["A321"])
+    print(data.data.head(5))
+
+    for typecode, vertical_rates in map_typecode_vrate.items():
+        print(vertical_rates)
+        if not hist:
+            sns.kdeplot(
+                vertical_rates, label=typecode, linewidth=2, clip=(0, 4000)
+            )
+            plt.ylabel("Density")
+        else:
+            sns.histplot(
+                vertical_rates,
+                label=typecode,
+                bins=30,
+                kde=True,
+                clip=(0, 4000),
+            )
+            plt.ylabel("Count")
+
+    plt.xlabel("Vertical Rate")
+    plt.title("Vertical Rate Distribution by Aircraft Typecode")
+    plt.legend(title="Typecode")
+    plt.savefig(path1)
+    plt.show
+
+    # Define number of rows and columns
+    rows, cols = 2, 5
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 8))  # Adjust figure size
+
+    # Flatten the axes array for easy iteration
+    axes = axes.flatten()
+
+    # Iterate over each typecode and corresponding subplot
+    for ax, (typecode, vertical_rates) in zip(axes, map_typecode_vrate.items()):
+        if not hist:
+            sns.kdeplot(vertical_rates, ax=ax, linewidth=2, clip=(0, 4000))
+            ax.set_ylabel("Density")
+        else:
+            sns.histplot(
+                vertical_rates,
+                ax=ax,
+                label=typecode,
+                bins=30,
+                kde=True,
+                clip=(0, 4000),
+            )
+            ax.set_ylabel("Count")
+        ax.set_title(f"Typecode: {typecode}")
+        ax.set_xlabel("Vertical Rate")
+
+    # Remove any empty subplots (if less than 10 typecodes)
+    for i in range(len(map_typecode_vrate), rows * cols):
+        fig.delaxes(axes[i])
+
+    plt.tight_layout()
+    plt.savefig(path2)
+    plt.show()
 
 
 class Displayer:
@@ -201,7 +283,7 @@ class Displayer:
             plt.savefig(plt_path)
 
         return 0
-    
+
     def plot_latent_space_pseudo_inputs_selected(
         self, num_point: int, model: VAE_TCN_Vamp, plt_path: str
     ) -> int:
@@ -213,8 +295,8 @@ class Displayer:
         )
 
         all_tensor = all_tensor.permute(0, 2, 1)
-        pseudo_latent,_ = model.pseudo_inputs_latent()
-        pseudo_latent  = pseudo_latent.cpu().detach().numpy()
+        pseudo_latent, _ = model.pseudo_inputs_latent()
+        pseudo_latent = pseudo_latent.cpu().detach().numpy()
 
         ## getting mu and sigma
         mu, log_var = model.encoder(all_tensor)
@@ -370,15 +452,24 @@ class Displayer:
             code: [
                 flight.vertical_rate_mean
                 for flight in data.query(f"typecode in ['{code}']")
+                if 0 < flight.vertical_rate_mean < 4000
             ]
             for code in chosen_labels
         }
         self.type_code_vrate = map_typecode_vrate
 
     def plot_distribution_typecode(
-        self, path1: str, path2: str, hist: bool = False
+        self,
+        path1: str,
+        path2: str,
+        hist: bool = False,
+        compute_v_rate: bool = False,
     ) -> None:
         data = self.data_clean.basic_traffic_data
+
+        if compute_v_rate:
+            self.basic_traffic_data = self.data_clean.comp_vertical_rates()
+
         if hist:
             path1 = path1.split(".")[0] + "_hist.png"
             path2 = path2.split(".")[0] + "_hist.png"
@@ -502,13 +593,15 @@ class Displayer:
         )
         map_typecode_vrate = self.type_code_vrate_gen
         print("|--Data Generated--|")
-        fig, ax = plt.subplots() 
+        fig, ax = plt.subplots()
         for typecode, vertical_rates in map_typecode_vrate.items():
             if not hist:
                 sns.kdeplot(vertical_rates, label=typecode, ax=ax, linewidth=2)
                 plt.ylabel("Density")
             else:
-                sns.histplot(vertical_rates, label=typecode,ax=ax, bins=30, kde=True)
+                sns.histplot(
+                    vertical_rates, label=typecode, ax=ax, bins=30, kde=True
+                )
                 plt.ylabel("Count")
 
         # plt.xlim(, 0)
@@ -875,7 +968,6 @@ class Displayer:
         batch_size: int = 500,
         take_off: bool = False,
     ) -> None:
-
         generated_point = model.sample(num_point, batch_size)
 
         # print("|--Converting--|")
