@@ -192,7 +192,7 @@ def main() -> None:
 
     # max_num_labels = 10
     # labels = data_cleaner.get_typecodes_labels()[:max_num_labels]
-    labels = ['A333','A21N','A321','B738']
+    labels = ['B738', 'A321', 'A21N', 'A333']
     max_num_labels = len(labels)
     outputs_tensors = []
     for label in tqdm(labels,desc = 'generating for each label'):

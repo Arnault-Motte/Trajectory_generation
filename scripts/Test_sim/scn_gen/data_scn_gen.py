@@ -71,8 +71,8 @@ def main() -> None:
     s = Simulator(t_f)
     s.scenario_create(
         args.scn_file,
-        log_f_name=args.scn_file.split(".") + ".txt",
-        load_file="navpoint_temp.pkl",
+        log_f_name=args.scn_file.split(".")[0] + ".txt",
+        load_file="",
         typecode="0",
     )
 
