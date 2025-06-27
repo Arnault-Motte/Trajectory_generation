@@ -35,16 +35,31 @@ def plot_traffic(
     background: bool = True,
 ) -> None:
     if background:
-        # background elements
-        paris_area = france.data.query("ID_1 == 1000")
-        seine_river = Nominatim.search(
-            "Seine river, France"
-        ).shape.intersection(paris_area.union_all().buffer(0.1))
+        # # background elements
+        # paris_area = france.data.query("ID_1 == 1000")
+        # seine_river = Nominatim.search(
+        #     "Seine river, France"
+        # ).shape.intersection(paris_area.union_all().buffer(0.1))
+        from traffic.core.mixins import PointMixin
+        from traffic.data import airports
+
+        thres_25 = PointMixin()
+        thres_25.latitude, thres_25.longitude = (
+            airports["LFPO"]
+            .runways.data.query("name == '25'")
+            .latitude.values[0],
+            airports["LFPO"]
+            .runways.data.query("name == '25'")
+            .longitude.values[0],
+        )
+        thres_25.name = "thres 25"
 
     with plt.style.context("traffic"):
         fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
-        traffic.plot(ax, alpha=0.7, color="blue")
-        plt.savefig(plot_path)
+        traffic.plot(ax, alpha=0.2, color="blue")
+        if background:
+            thres_25.plot(ax)
+        plt.savefig(plot_path,dpi=400)
         plt.show()
 
 

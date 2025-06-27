@@ -98,6 +98,7 @@ def main() -> None:
         args.data,
         columns=columns,
         chosen_typecodes=args.typecodes,
+        airplane_types_num=10 if len(args.typecodes) ==0 else -1,
     )
     print(data_cleaner.chosen_types)
     data = data_cleaner.clean_data()

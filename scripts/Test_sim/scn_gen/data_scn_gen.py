@@ -50,9 +50,20 @@ def main() -> None:
         default=3000,
         help="Number of flights to be sampled for each label",
     )
+
+    parser.add_argument(
+        "--typecode",
+        type=str,
+        default="",
+        help="typecode of the data to select",
+    )
     args = parser.parse_args()
 
-    data_clean = Data_cleaner(file_name=args.data, airplane_types_num=10)
+    data_clean = Data_cleaner(
+        file_name=args.data,
+        airplane_types_num=10 if args.typecode == "" else -1,
+        chosen_typecodes=[args.typecode] if args.typecode != "" else [],
+    )
     data_clean.return_labels()  # computing the labels
 
     labels = data_clean.get_typecodes_labels()

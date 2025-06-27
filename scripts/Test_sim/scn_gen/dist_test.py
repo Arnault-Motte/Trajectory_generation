@@ -72,6 +72,7 @@ def main() -> None:
 
     t = Traffic.from_file(args.og_traff)
     print(t.data.head(4))
+    print(t.data["flight_id"].value_counts())
     
 
     

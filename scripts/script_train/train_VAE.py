@@ -13,6 +13,7 @@ import torch
 from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
 import argparse
+from traffic.core import Traffic
 
 
 def main() -> int:
@@ -40,14 +41,24 @@ def main() -> int:
     praser.add_argument(
         "--cuda", type=int, default=0, help="Index of the GPU to be used"
     )
-    praser.add_argument(
-        "--scale", type=float, default=1, help="inital scale"
-    )
-    praser.add_argument(
-        "--l_dim", type=int, default=64, help="inital scale"
-    )
+    praser.add_argument("--scale", type=float, default=1, help="inital scale")
+    praser.add_argument("--l_dim", type=int, default=64, help="inital scale")
     praser.add_argument(
         "--pseudo_in", type=int, default=800, help="pseudo inputs num"
+    )
+
+    praser.add_argument(
+        "--sample",
+        type=float,
+        default=1.0,
+        help="Determines the %% of the data associated to the typecode that will be used for training",
+    )
+
+    praser.add_argument(
+        "--save_sampled",
+        type=str,
+        default="",
+        help="If you setted sample, you can use this parameter to save the new dataset. The path of the save file.",
     )
 
     args = praser.parse_args()
@@ -56,29 +67,43 @@ def main() -> int:
     #     raise ValueError(
     #         "At least one argument has not been defined. Only temp can be ignored."
     #     )
-    
+
     vr_rate = bool(args.vrate)
 
     print(sys.path)
-    device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() else "cpu")  # noqa: F405
+    device = torch.device(
+        f"cuda:{args.cuda}" if torch.cuda.is_available() else "cpu"
+    )  # noqa: F405
     print(device)
     ## Getting the data
     ##Setting the chosen columns
-    columns = ["track", "groundspeed", "timedelta"] 
+    columns = ["track", "groundspeed", "timedelta"]
     columns += ["vertical_rate"] if vr_rate else ["altitude"]
 
-    print(f'chosen columns : {columns}')
+    print(f"chosen columns : {columns}")
 
-    data_cleaner = Data_cleaner(
-        args.data,
-        columns=columns,
-        chosen_typecodes=args.typecodes,
-    )
+    if 0< args.sample <1.0:
+        t = Traffic.from_file(args.data)
+        t = t.sample(int(len(t)*args.sample))
+
+        if args.save_sample != "":
+            t.to_pickle(args.save_sample)
+
+        data_cleaner = Data_cleaner(
+            traff = t,
+            columns=columns,
+            chosen_typecodes=args.typecodes,
+        )
+    else:
+        data_cleaner = Data_cleaner(
+            args.data,
+            columns=columns,
+            chosen_typecodes=args.typecodes,
+        )
 
     data = data_cleaner.clean_data()
     labels = data_cleaner.return_labels()
     print(labels, labels.shape)
-
 
     ##Getting the model
     seq_len = 200
@@ -91,7 +116,7 @@ def main() -> int:
     kernel_size = 16
     dilatation = 2
     dropout = 0.2
-    pseudo_input_num = args.pseudo_in 
+    pseudo_input_num = args.pseudo_in
     patience = 30
     min_delta = -100
     print(in_channels)

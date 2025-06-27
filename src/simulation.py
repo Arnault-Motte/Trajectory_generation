@@ -3,7 +3,7 @@ import pickle
 from datetime import datetime, time, timedelta, timezone
 from typing import Iterator, Optional
 
-import minisky
+# import minisky
 from tqdm import tqdm
 
 import pandas as pd
@@ -206,10 +206,16 @@ def defwpt(wpt_name: str, lat: float, lon: float, type: str = "FIX") -> str:
     return START + f"DEFWPT {wpt_name} {lat} {lon} {type} \n"
 
 
-def addwpt(acid: str, wpt_name: str, alt: float, groundspeed: float) -> str:
+def addwpt(
+    acid: str, wpt_name: str, alt: float = None, groundspeed: float = None
+) -> str:
     """
     Command to add the wpt to the route of the aircraft
     """
+    if alt is None:
+        alt = ""
+    if groundspeed is None:
+        groundspeed = ""
     return START + f"ADDWPT {acid} {wpt_name}, {alt}, {groundspeed} \n"
 
 
@@ -276,53 +282,172 @@ def schedule(time: int, command: str) -> str:
     )
 
 
-def gen_instruct_f(flight: Flight, nav_p: Flight, path_log: str,typecode: str = "") -> str:
+def mean_alt_spd(f: Flight, nav_p: Flight) -> dict:
+    """
+    Outputs the mean altitude and speed for every navpoint range
+    """
+
+    f_start = f.start
+    t_first = f_start
+    dic = {}
+
+    np_d = nav_p.data
+    new_nav = np_d[
+        ~np_d["name"].eq(np_d["name"].shift())
+    ]  # remove succesives duplicates
+    # print(new_nav)
+    for _, n_p in new_nav.iterrows():
+
+        t_small = f.after(t_first).before(n_p.stop)
+
+        mean_speed = t_small.data["groundspeed"].mean()
+        mean_alt = t_small.data["altitude"].mean()
+        print(mean_speed,mean_alt)
+        dic[n_p.navaid] = {
+            "spd": mean_speed,
+            "alt": mean_alt,
+            "timestamp": t_first,
+        }
+        t_first = n_p.stop
+
+    t_small = f.after(t_first)
+    if t_small is not None:
+        mean_speed = t_small.data["groundspeed"].mean()
+        mean_alt = t_small.data["altitude"].mean()
+        dic["end"] = {"spd": mean_speed, "alt": mean_alt, "timestamp": t_first}
+
+    print(dic)
+
+    return dic
+
+
+def gen_instruct_f(
+    flight: Flight, nav_p: Flight, path_log: str, typecode: str = ""
+) -> str:
     """
     return the instruct for a specific flight in a scenario
     """
+
+    means = mean_alt_spd(flight, nav_p)
+
     f_data = flight.data
     acid = f_data.iloc[0]["flight_id"]
-    text = cre(
-        acid,
-        typecode if typecode != "0" else f_data.iloc[0]["typecode"] ,
-        f_data.iloc[0]["latitude"],
-        f_data.iloc[0]["longitude"],
-        f_data.iloc[0]["track"],
-        f_data.iloc[0]["altitude"],
-        f_data.iloc[0]["groundspeed"],
-    )
+    text = ""
     # nav_p = navpoints_table(flight)
     if nav_p is None:
         print("none")
         with open(path_log.split(".")[0] + "_denied_flight.txt", "a") as file:
             file.write(flight.flight_id + "\n")
         return ""
-    points = get_info(flight, nav_p)
+
     prev_wpt = ""
-    previous_start = points.iloc[0]["start"]
-
-    for i, (_, row) in enumerate(points.iterrows()):
+    previous_start = nav_p.data.iloc[0]["start"]
+    start = ""
+    for i, (_, row) in enumerate(nav_p.data.iterrows()):
         # print(row)
+        if row["name"] != prev_wpt:
+            if i != 0:
+                diff_time = (start - previous_start).total_seconds()
+                text += schedule(
+                    diff_time,
+                    addwpt(acid, row["name"]),
+                )  # directing the trajectory towards the waypoint
+                text += schedule(
+                    diff_time, delwpt(acid, prev_wpt)
+                )  # deleting the previous waypoint, useful if the waypoint is never reached
+                text += schedule(
+                    diff_time, set_alt(acid, means[row["name"]]["alt"])
+                )  # deleting the previous waypoint, useful if the waypoint is never reached
+                text += schedule(
+                    diff_time, set_spd(acid, means[row["name"]]["spd"])
+                )  # deleting the previous waypoint, useful if the waypoint is never reached
+                start = row["stop"]
+            else:
+                text += cre(
+                    acid,
+                    typecode if typecode != "0" else f_data.iloc[0]["typecode"],
+                    f_data.iloc[0]["latitude"],
+                    f_data.iloc[0]["longitude"],
+                    f_data.iloc[0]["track"],
+                    means[row["name"]]["alt"],
+                    means[row["name"]]["spd"],
+                )
+                text += addwpt(acid, row["name"])
+                start = row["stop"]
+            prev_wpt = row["name"]
 
-        if i != 0:
-            start = row["start"]
-            diff_time = (start - previous_start).total_seconds()
-            text += addwpt(
-                acid, row["point"], row["altitude"], row["groundspeed"]
-            )  # directing the trajectory towards the waypoint
-            text += schedule(
-                diff_time, delwpt(acid, prev_wpt)
-            )  # deleting the previous waypoint, useful if the waypoint is never reached
-        else:
-            text += addwpt(
-                acid, row["point"], row["altitude"], row["groundspeed"]
-            )
-        prev_wpt = row["point"]
+    if start != flight.stop:
+        diff_time = (flight.stop - previous_start).total_seconds()
+        text += schedule(
+                        diff_time, set_alt(acid, means["end"]["alt"])
+        )  # deleting the previous waypoint, useful if the waypoint is never reached
+        text += schedule(
+                        diff_time, set_spd(acid, means["end"]["spd"])
+        )  # deleting the previous waypoint, useful if the waypoint is never reached
 
-    text += lvnav(acid)
     return text
 
+def set_alt(acid:str,alt:float) -> str:
+    return START + f"ALT {acid}, {alt}\n"
 
+def set_spd(acid:str,spd:float) -> str:
+    return START + f"ALT {acid}, {spd}\n"
+
+# def gen_instruct_f(
+#     flight: Flight, nav_p: Flight, path_log: str, typecode: str = ""
+# ) -> str:
+#     """
+#     return the instruct for a specific flight in a scenario
+#     """
+
+#     means = mean_alt_spd(flight, nav_p)
+
+#     f_data = flight.data
+#     acid = f_data.iloc[0]["flight_id"]
+#     text = ""
+#     # nav_p = navpoints_table(flight)
+#     if nav_p is None:
+#         print("none")
+#         with open(path_log.split(".")[0] + "_denied_flight.txt", "a") as file:
+#             file.write(flight.flight_id + "\n")
+#         return ""
+#     points = get_info(flight, nav_p)
+#     prev_wpt = ""
+#     previous_start = points.iloc[0]["start"]
+
+#     for i, (_, row) in enumerate(points.iterrows()):
+#         # print(row)
+#         if row["point"] != prev_wpt:
+#             if i != 0:
+#                 start = row["start"]
+#                 diff_time = (start - previous_start).total_seconds()
+#                 text += schedule(
+#                     diff_time,
+#                     addwpt(
+#                         acid, row["point"]
+#                     ),
+#                 )  # directing the trajectory towards the waypoint
+#                 text += schedule(
+#                     diff_time, delwpt(acid, prev_wpt)
+#                 )  # deleting the previous waypoint, useful if the waypoint is never reached
+#             else:
+#                 text += cre(
+#                     acid,
+#                     typecode if typecode != "0" else f_data.iloc[0]["typecode"],
+#                     f_data.iloc[0]["latitude"],
+#                     f_data.iloc[0]["longitude"],
+#                     f_data.iloc[0]["track"],
+#                     means[row['point']]['alt'],
+#                     means[row['point']]['spd'],
+#                 )
+#                 text += addwpt(
+#                     acid, row["point"]
+#                 )
+#             prev_wpt = row["point"]
+
+
+#     text += lvnav(acid)
+#     return text
 def get_final_wpt_name(traff: Traffic) -> tuple[float, float]:
     f = traff[0]
     nav_p = navpoints_table(f)
@@ -343,79 +468,79 @@ def time_to_sec(t: time) -> int:
     )
 
 
-def scn_file_to_minisky(scn_file: str) -> tuple[str, int]:
-    """
-    Takes a well organized scn file and returns the instrcution as text for use by minisky.
-    In order to work the three first line must define and start the logger.
-    The last two lines of the file must schedule the turn off the logger and quit.
-    Also returns the time to be elpased in seconds.
-    """
-    with open(scn_file, "r") as file:
-        text = file.read()
+# def scn_file_to_ky(scn_file: str) -> tuple[str, int]:
+#     """
+#     Takes a well organized scn file and returns the instrcution as text for use by minisky.
+#     In order to work the three first line must define and start the logger.
+#     The last two lines of theminis file must schedule the turn off the logger and quit.
+#     Also returns the time to be elpased in seconds.
+#     """
+#     with open(scn_file, "r") as file:
+#         text = file.read()
 
-    text = "\n".join([line for line in text.splitlines() if line.strip()])
-    text = text.replace(START, "")
-    time_test = text.splitlines()[-1].split(" ")[1]
-    text = "\n".join([line for line in text.splitlines()][3:-2])
-    # with open(scn_file.split('.')[0] +'no_start.scn',"w") as file:
-    #      file.write(text)
+#     text = "\n".join([line for line in text.splitlines() if line.strip()])
+#     text = text.replace(START, "")
+#     time_test = text.splitlines()[-1].split(" ")[1]
+#     text = "\n".join([line for line in text.splitlines()][3:-2])
+#     # with open(scn_file.split('.')[0] +'no_start.scn',"w") as file:
+#     #      file.write(text)
 
-    time_test = (
-        "0" + time_test if len(time_test.split(".")[0]) < 8 else time_test
-    )
-    time_test_f = time_to_sec(time.fromisoformat(time_test))
-    return text, time_test_f
+#     time_test = (
+#         "0" + time_test if len(time_test.split(".")[0]) < 8 else time_test
+#     )
+#     time_test_f = time_to_sec(time.fromisoformat(time_test))
+#     return text, time_test_f
 
 
-def launch_simulation(
-    scn_file: str, log_file: str, log_step: int, n_write_step: int = 100
-) -> None:
-    """
-    Simulates the snc_file using minisky and logs the result in log_file.
-    Problem : VERY SLOW
-    """
-    text, total_time = scn_file_to_minisky(scn_file)
+# def launch_simulation(
+#     scn_file: str, log_file: str, log_step: int, n_write_step: int = 100
+# ) -> None:
+#     """
+#     Simulates the snc_file using minisky and logs the result in log_file.
+#     Problem : VERY SLOW
+#     """
+#     text, total_time = scn_file_to_minisky(scn_file)
 
-    minisky.init()
-    minisky.sim.reset()
-    for line in tqdm(text.splitlines(), desc="Initialization"):
-        minisky.stack.stack(line)
-    print("|Finished Init|")
+#     minisky.init()
+#     minisky.sim.reset()
+#     for line in tqdm(text.splitlines(), desc="Initialization"):
+#         minisky.stack.stack(line)
+#     print("|Finished Init|")
 
-    minisky.sim.simdt = log_step
-    buffer = []
+#     minisky.sim.simdt = log_step
+#     buffer = []
 
-    with open(log_file, mode="w", newline="") as file:
-        file.write("#\n#\n")  # 2first lines
-        writer = csv.writer(file)
-        with tqdm(
-            total=total_time, desc="Simulation Progress", unit="s"
-        ) as pbar:
-            while minisky.sim.simt < total_time:
-                minisky.sim.step()
-                data_step = [
-                    [
-                        minisky.sim.simt,
-                        minisky.traf.lat[i],
-                        minisky.traf.lon[i],
-                        minisky.traf.alt[i],
-                        minisky.traf.cas[i],
-                    ]
-                    for i in range(len(minisky.traf.lat))
-                ]
-                buffer.extend(data_step)
+#     with open(log_file, mode="w", newline="") as file:
+#         file.write("#\n#\n")  # 2first lines
+#         writer = csv.writer(file)
+#         with tqdm(
+#             total=total_time, desc="Simulation Progress", unit="s"
+#         ) as pbar:
+#             while minisky.sim.simt < total_time:
+#                 minisky.sim.step()
+#                 data_step = [
+#                     [
+#                         minisky.sim.simt,
+#                         minisky.traf.lat[i],
+#                         minisky.traf.lon[i],
+#                         minisky.traf.alt[i],
+#                         minisky.traf.cas[i],
+#                     ]
+#                     for i in range(len(minisky.traf.lat))
+#                 ]
+#                 buffer.extend(data_step)
 
-                if (
-                    minisky.sim.simt != 0
-                    and ((minisky.sim.simt / log_step) % n_write_step) == 0
-                ):
-                    writer.writerows(buffer)
-                    buffer.clear()
-                pbar.update(minisky.sim.simt - pbar.n)
-        if len(buffer) != 0:
-            writer.writerows(buffer)
+#                 if (
+#                     minisky.sim.simt != 0
+#                     and ((minisky.sim.simt / log_step) % n_write_step) == 0
+#                 ):
+#                     writer.writerows(buffer)
+#                     buffer.clear()
+#                 pbar.update(minisky.sim.simt - pbar.n)
+#         if len(buffer) != 0:
+#             writer.writerows(buffer)
 
-    return
+#     return
 
 
 def compute_alt(traff: Traffic, init_alt: float) -> Traffic:
@@ -505,7 +630,7 @@ class Simulator:
         list_flights = []
         for e in tqdm(t, desc="writing text in memory"):
             f = traff[e.data.iloc[0]["flight_id"]]
-            text += gen_instruct_f(f, e, log_f_name,typecode)
+            text += gen_instruct_f(f, e, log_f_name, typecode)
             list_flights.append(f.flight_id)
 
         with open(
@@ -567,4 +692,5 @@ class Simulator:
         new_df["altitude"] = new_df["altitude"] * 3.28084  # from meters to feet
         new_df["groundspeed"] = new_df["groundspeed"] * 1.94384  # M/S to KTS
         f_traff = Traffic(new_df)
+
         return f_traff

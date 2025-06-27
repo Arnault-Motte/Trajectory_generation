@@ -22,6 +22,7 @@ def select_dist(traff: str, dis: dict, chosen_labels: list) -> list[dict]:
     list_dist = []
     for label in chosen_labels:
         flight_ids = data.return_flight_id_for_label(label)
+        print(flight_ids[:20])
         print(len(flight_ids))
         dic_dis = {
             dist: {key: 0.0 for key in dis[dist].keys()}

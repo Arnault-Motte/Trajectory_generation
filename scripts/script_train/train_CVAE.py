@@ -116,7 +116,6 @@ def main() -> int:
     #     raise ValueError(
     #         "At least one argument has not been defined. Only temp can be ignored."
     #     )
-
     vr_rate = bool(args.vrate)
 
     print("STARTING----------------------------------------------------")
