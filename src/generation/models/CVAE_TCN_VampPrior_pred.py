@@ -1,7 +1,5 @@
-import os
 from collections import Counter
 
-import onnx
 import torch
 import torch.distributions as distrib
 import torch.nn as nn
@@ -112,7 +110,7 @@ class TCN_encoder(nn.Module):
     ):
         super(TCN_encoder, self).__init__()
 
-        channels = inital_channels + 1
+        channels = inital_channels
 
         self.tcn = TCN(
             channels,  # * 2,  # adding the label dim
@@ -136,13 +134,23 @@ class TCN_encoder(nn.Module):
         self,
         x: torch.Tensor,
         labels: torch.Tensor,
+        mask: torch.Tensor = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if labels is None:
             x_label = x
-
-        x_label = (
-            torch.cat([x, labels], dim=1)  # on channels
-        )
+        elif mask is None:
+            x_label = (
+                torch.cat([labels, x], dim=2)  # on the number of points
+            )
+        else:
+            mask_expanded = mask.unsqueeze(1).expand_as(
+                x
+            )  # use mask to combine the label and the prior
+            x_label = x.clone()
+            x_label[mask_expanded] = labels[mask_expanded]
+            x_label = torch.cat(
+                [x, mask.unsqueeze(1)], dim=1
+            )  # help the model distinguish label from input
 
         x_label = self.tcn(x_label)
         x_label = self.avgpool(x_label)
@@ -171,18 +179,21 @@ class TCN_decoder(nn.Module):
         nb_blocks: int,
         upsamplenum: int,
         seq_len: int,
-        labels_latent_dim: int,
     ):
         super(TCN_decoder, self).__init__()
         self.seq_len = seq_len
         self.first_dense = nn.Linear(
-            latent_dim + labels_latent_dim,
+            latent_dim,  ##to delete cond
             in_channels * (seq_len // upsamplenum),
         )
         self.upsample = nn.Upsample(scale_factor=upsamplenum)
 
+        in_channels = in_channels + 1
+
         self.tcn = TCN(
             in_channels,
+            # if not test_concat or test_msk
+            # else in_channels * 2,  ## to delete cond
             latent_dim,
             out_channels,
             kernel_size,
@@ -193,6 +204,10 @@ class TCN_decoder(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
+        self.last_fcn = nn.Linear(
+            seq_len * out_channels, seq_len * out_channels
+        )
+
         self.sampling_factor = upsamplenum
 
         self.out_channels = out_channels
@@ -201,15 +216,31 @@ class TCN_decoder(nn.Module):
         self,
         x: torch.Tensor,
         labels: torch.Tensor,
+        mask: torch.Tensor = None,
+        og_label: torch.Tensor = None,
     ) -> torch.Tensor:
-        x = torch.cat([x, labels], dim=1)  ##to delete
         x = self.first_dense(x)
         b, _ = x.size()
         x = x.view(b, -1, int(self.seq_len / self.sampling_factor))
-
         x = self.upsample(x)
 
-        x = self.tcn(x)
+        if mask is None:  ## to delete
+            x = torch.cat([x, labels], dim=1)  ##to delete add on channel dim
+        else:
+            mask_expanded = mask.unsqueeze(1).expand_as(
+                x
+            )  # use mask to combine the label and the prior
+            x_label = x  # .clone()
+            x_label[mask_expanded] = labels[mask_expanded]
+            x_label = torch.cat(
+                [x, mask.unsqueeze(1)], dim=1
+            )  # help the model distinguish label from input
+        # print(x.shape)
+        x = self.tcn(x) if mask is None else self.tcn(x_label)
+
+        x = x.reshape(x.shape[0], -1)
+        x = self.last_fcn(x)
+        x = x.reshape(x.shape[0], self.out_channels, self.seq_len)
 
         return x
 
@@ -268,6 +299,35 @@ class Label_mapping(nn.Module):
 
     def forward(self, labels: torch.Tensor) -> torch.Tensor:
         return self.fcl(labels) if self.fcl else self.embbedings(labels)
+
+
+# class Label_mapping_traj_part(nn.Module):
+#     """
+#     Model use to map the trajectory parts to the expected
+#     latent dim.
+#     """
+
+#     def __init__(
+#         self,
+#         label_dim: int,
+#         latent_dim: list[int],
+#         dropout: float = 0.2,
+#     ) -> None:
+#         super(Label_mapping_traj_part, self).__init__()
+#         self.first_layer = nn.Linear(label_dim, latent_dim[0])
+#         self.dropout = nn.Dropout(dropout)
+#         layers = [self.first_layer, self.dropout, nn.ReLU()]
+#         for i in range(len(latent_dim) - 1):
+#             layer = nn.Linear(latent_dim[i], latent_dim[i + 1])
+#             layers.append(layer)
+#             if i != len(latent_dim) - 2:
+#                 layers.append(self.dropout)
+#                 layers.append(nn.ReLU())
+#         self.layers = nn.Sequential(*layers)
+
+#     def forward(self, traj: torch.Tensor) -> torch.Tensor:
+#         traj = traj.reshape(traj.size(0), -1)
+#         return self.layers(traj)
 
 
 class Label_mapping_traj_part(nn.Module):
@@ -355,7 +415,7 @@ class Weight_Prior_Conditioned_complexe(nn.Module):
 
 
 # Model
-class CVAE_TCN_Vamp(nn.Module):
+class CVAE_TCN_Vamp_pred(nn.Module):
     """
     CVAE with a VampPrior.
     The user can control if the prior is conditioned or not.
@@ -381,34 +441,37 @@ class CVAE_TCN_Vamp(nn.Module):
         patience: int = 100,
         min_delta: float = -100.0,
         num_classes: int = None,
-        conditioned_prior: bool = True,
+        conditioned_prior: bool = False,
         temp_save: str = "best_model.pth",
         num_worker: int = 4,
         init_std: float = 1,
         d_weight: bool = False,
+        trajectory_label: bool = True,
+        complexe_weight: bool = False,
+        padding: int = -1.1,
+        test_concat: bool = True,
+        test_concat_mask: bool = True,
+        final_fcl: int = 1,
     ):
-        super(CVAE_TCN_Vamp, self).__init__()
-        self.label_dim = label_dim
-        self.label_latent = label_latent
-
-        self.latent_dim = latent_dim
+        super(CVAE_TCN_Vamp_pred, self).__init__()
+        self.padding = padding
         self.d_weight = d_weight
         self.num_worker = num_worker
         self.temp_save = temp_save
         self.pseudo_num = pseudo_input_num
-        self.labels_encoder_broadcast = Label_mapping(
-            num_classes is None,
-            label_dim,
-            seq_len,
-            num_classes,
-        )
+        self.labels_encoder_broadcast = nn.Identity()
 
-        self.labels_decoder_broadcast = Label_mapping(
-            num_classes is None, label_dim, label_latent, num_classes
+        self.labels_decoder_broadcast = Label_mapping_traj_part(
+            input_channels=in_channels + 1,
+            num_channels=[16, 32, 64, latent_dim],
+            label_dim=label_latent,
+            kernel_size=kernel_size,
+            dropout=dropout,
+            return_layer=True,  # to delete
         )
 
         self.encoder = TCN_encoder(
-            in_channels,
+            in_channels + 1,
             out_channels,
             latent_dim,
             kernel_size,
@@ -422,7 +485,7 @@ class CVAE_TCN_Vamp(nn.Module):
 
         self.decoder = TCN_decoder(
             latent_dim,
-            in_channels,
+            in_channels,  # if padding is None else in_channels + 1,
             latent_dim,
             kernel_size,
             stride,
@@ -430,15 +493,15 @@ class CVAE_TCN_Vamp(nn.Module):
             dropout,
             nb_blocks,
             upsamplenum,
-            seq_len,  # + 1 if trajectory_label else seq_len,
-            labels_latent_dim=label_latent,
+            seq_len,
         )
 
         self.pseudo_inputs_layer = Pseudo_inputs_generator(
-            in_channels,
+            in_channels + 1,
             seq_len,
             pseudo_input_num,
             dropout=dropout,
+            last_chanel_bool=True,
         )
 
         self.pseudo_labels_layer = Pseudo_labels_generator(
@@ -457,13 +520,13 @@ class CVAE_TCN_Vamp(nn.Module):
         self.prior_weights = nn.Parameter(
             torch.ones((1, pseudo_input_num)), requires_grad=True
         )
-        self.prior_weights_layers = (
-            Weight_Prior_Conditioned(
-                num_pseudo_inputs=pseudo_input_num,
-                labels_dim=label_dim,
-            )
-            if conditioned_prior
-            else None
+
+        self.prior_weights_layers = Weight_Prior_Conditioned_complexe(
+            num_pseudo_inputs=pseudo_input_num,
+            input_channels=in_channels + 1,
+            num_channels=[16, 32, 64, 128],
+            kernel_size=kernel_size,
+            dropout=dropout,
         )
 
         self.early_stopping = early_stopping
@@ -477,7 +540,7 @@ class CVAE_TCN_Vamp(nn.Module):
         return self.prior_weights_layers is not None
 
     def encode(
-        self, x: torch.Tensor, label: torch.Tensor
+        self, x: torch.Tensor, label: torch.Tensor, mask: torch.Tensor = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Encodes the data x in entry to train the model"
@@ -486,8 +549,9 @@ class CVAE_TCN_Vamp(nn.Module):
             label = None
         else:
             label = self.labels_encoder_broadcast(label)
-            label = label.view(-1, 1, self.seq_len)
-        mu, log_var = self.encoder(x, label)
+            label = label.view(-1, self.in_channels, self.seq_len)
+            # print(label.shape)
+        mu, log_var = self.encoder(x, label, mask)
         return mu, log_var
 
     def pseudo_inputs_latent(
@@ -506,6 +570,8 @@ class CVAE_TCN_Vamp(nn.Module):
         pseudo_inputs = self.pseudo_inputs_layer.forward()
 
         mini_batch_size = 600
+
+        pseudo_labels = None
 
         mu, log_var = self.encode(pseudo_inputs, pseudo_labels)
 
@@ -528,16 +594,21 @@ class CVAE_TCN_Vamp(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(self, z: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
+    def decode(
+        self, z: torch.Tensor, label: torch.Tensor, mask: torch.Tensor = None
+    ) -> torch.Tensor:
         """
         Generates the output from the sampled vector and the chosen label.
         """
-        label = self.labels_decoder_broadcast(label)
-
-        x = self.decoder(z, label)
+        old_label = label
+        label = self.labels_decoder_broadcast(label, mask)
+        # print(label.shape,z.shape)
+        x = self.decoder(z, label, ~mask, old_label)
         return x
 
-    def get_prior_weight(self, labels: torch.Tensor = None) -> torch.Tensor:
+    def get_prior_weight(
+        self, labels: torch.Tensor = None, mask: torch.Tensor = None
+    ) -> torch.Tensor:
         """
         Returns the weights of each component of the prior.
         """
@@ -547,14 +618,19 @@ class CVAE_TCN_Vamp(nn.Module):
             )
 
         if self.prior_weights_layers:
+            labels = labels.permute(0, 2, 1)
+            if mask is not None:
+                mask = mask.unsqueeze(1)
+                labels = torch.concat([labels, mask], dim=1)
+                return self.prior_weights_layers(labels)
             return self.prior_weights_layers(labels.view(labels.size(0), -1))
-        else:
-            return self.prior_weights
 
     def forward(
         self,
         x: torch.Tensor,
         labels: torch.Tensor,
+        mask: torch.Tensor = None,
+        label_msk: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -564,15 +640,23 @@ class CVAE_TCN_Vamp(nn.Module):
         torch.Tensor,
     ]:
         conditioned = self.is_conditioned()
-        labels_encoder = labels  # risk
+        labels_encoder = labels.permute(0, 2, 1)  # risk
         if not conditioned:
             labels_encoder = None
 
         mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent()
         x = x.permute(0, 2, 1)  # 500 3 200
-        mu, log_var = self.encode(x, labels_encoder)
+        # if mask is not None:
+        #     mask = mask.permute(1, 0)
+        #     print("m2 ",mask.shape)
+        # print(labels_encoder.shape)
+        # print(x.shape)
+        mu, log_var = self.encode(x, labels_encoder, mask)
         z = self.reparametrize(mu, log_var).to(next(self.parameters()).device)
-        x_reconstructed = self.decode(z, labels)
+        l_msk = label_msk if label_msk is not None else mask
+        if l_msk is not None:
+            l_msk = ~l_msk
+        x_reconstructed = self.decode(z, labels, l_msk)
         return x_reconstructed, z, mu, log_var, mu_pseudo, log_var_pseudo
 
     def fit(
@@ -598,10 +682,9 @@ class CVAE_TCN_Vamp(nn.Module):
             labels,
             batch_size,
             num_worker=self.num_worker,
+            padding=self.padding,
         )
-        data_loaders_val = divide_dataloader_per_label(
-            data_loader_val
-        )  # for validation loss
+        data_loaders_val = None
         class_weights = (
             compute_class_weights(dataloader_train) if self.d_weight else None
         )
@@ -625,14 +708,31 @@ class CVAE_TCN_Vamp(nn.Module):
                 self.train()
                 x_batch = item[0]
                 labels_batch = item[1]
+                mask = None
+                label_mask = None
+
+                mask = (
+                    (x_batch == self.padding)
+                    .all(dim=2)
+                    .to(next(self.parameters()).device)
+                )
+
+                if label_msk:
+                    label_mask = (
+                        (labels_batch != self.padding)
+                        .all(dim=2)
+                        .to(next(self.parameters()).device)
+                    )
 
                 x_batch = x_batch.to(next(self.parameters()).device)
                 labels_batch = labels_batch.to(next(self.parameters()).device)
                 x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
-                    x_batch, labels_batch
+                    x_batch, labels_batch, mask, label_mask
                 )
 
-                prior_weight = self.get_prior_weight(labels_batch)
+                if label_mask is None:
+                    label_mask = mask  ##to delete
+                prior_weight = self.get_prior_weight(labels_batch, label_mask)
 
                 lbl_weights = (
                     torch.Tensor(
@@ -648,7 +748,25 @@ class CVAE_TCN_Vamp(nn.Module):
                 )
 
                 x_loss = x_batch.permute(0, 2, 1)  ##to delete
+                if (
+                    loss_full
+                ):  # combining label and predcit to have a single output
+                    x_loss = x_loss.clone()
+                    mask_expanded = mask.unsqueeze(1).expand_as(
+                        x_loss
+                    )  # use mask to combine the label and the prior
+                    x_loss[mask_expanded] = labels_batch.permute(0, 2, 1)[
+                        mask_expanded
+                    ]
+                # print("_______________________________")
+                # print(x_loss[0][0])
+                # print(x_recon[0][0])
 
+                loss_mask = (
+                    ~mask if (not loss_full) and (mask is not None) else None
+                )  # to delete
+                # print(loss_mask)
+                # print("_______________________________")
                 loss = CVAE_vamp_prior_loss_label_weights(
                     x_loss,  # x_batch.permute(0, 2, 1),
                     lbl_weights,
@@ -660,15 +778,28 @@ class CVAE_TCN_Vamp(nn.Module):
                     pseudo_log_var,
                     scale=self.log_std,
                     vamp_weight=prior_weight,
+                    mask=loss_mask,  # 1 where we should predict
                 )
-
-                # gradiants
+                # loss = VAE_vamp_prior_loss(
+                #     x_batch.permute(0, 2, 1),
+                #     x_recon,
+                #     z,
+                #     mu,
+                #     log_var,
+                #     pseudo_mu,
+                #     pseudo_log_var,
+                #     scale=self.log_std,
+                #     vamp_weight=prior_weight,
+                # )
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
-
-                # check losses
+                # prior_weights = (
+                #     self.prior_weights_layers(labels_batch)
+                #     if self.prior_weights_layers
+                #     else self.prior_weights
+                # )
                 kl = vamp_prior_kl_loss(
                     z,
                     mu,
@@ -680,6 +811,7 @@ class CVAE_TCN_Vamp(nn.Module):
                 mse = reconstruction_loss2(
                     x_loss,  # x_batch.permute(0, 2, 1),
                     x_recon,
+                    mask=loss_mask,
                 )
                 cur_size = x_batch.size(0)
                 total_mse += mse.item() / cur_size
@@ -687,7 +819,7 @@ class CVAE_TCN_Vamp(nn.Module):
             scheduler.step()
             # validation
             val_loss, val_kl, val_recons = self.compute_val_loss(
-                data_loader_val
+                data_loader_val, loss_full, label_msk
             )
 
             total_loss = total_loss / len(dataloader_train)
@@ -703,16 +835,6 @@ class CVAE_TCN_Vamp(nn.Module):
                 print(
                     f"Validation set, Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f},scale: {self.log_std.item():.4f} "
                 )
-
-                print("Per data val loss")
-                for lb, d_l in data_loaders_val.items():
-                    val_loss, val_kl, val_recons = self.compute_val_loss(d_l)
-                    val_loss = val_loss / len(d_l)
-                    val_kl = val_kl / len(d_l)
-                    val_recons = val_recons / len(d_l)
-                    print(
-                        f"Label {lb} : Loss: {val_loss:.4f},MSE: {val_recons:.4f}, KL: {val_kl:.4f}, Log_like: {val_loss - val_kl:.4f},scale: {self.log_std.item():.4f} "
-                    )
 
             if epoch == epochs - 1:
                 print(
@@ -739,8 +861,6 @@ class CVAE_TCN_Vamp(nn.Module):
                     break
         if self.early_stopping:
             self.load_model(early_stopping.path)
-            self.trained = True
-            print(f"Best val loss = {early_stopping.min_loss}")
             print("|--Best model loaded--|")
         self.trained = True
 
@@ -801,6 +921,8 @@ class CVAE_TCN_Vamp(nn.Module):
     def compute_val_loss(
         self,
         val_data: DataLoader,
+        loss_full: bool = False,
+        label_msk: bool = False,
     ) -> tuple[float, float, float]:
         """
         Computes the validation loss.
@@ -813,16 +935,62 @@ class CVAE_TCN_Vamp(nn.Module):
         for item in val_data:
             x_batch = item[0].to(next(self.parameters()).device)
             labels = item[1].to(next(self.parameters()).device)
+            mask = None
+            label_mask = None  # to delete
 
-            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
-                x_batch,
-                labels,
+            mask = (
+                (x_batch == self.padding)
+                .all(dim=2)
+                .to(next(self.parameters()).device)
             )
 
-            prior_weights = self.get_prior_weight(labels)
+            if label_msk:  # to delete
+                label_mask = (
+                    (labels != self.padding)
+                    .all(dim=2)
+                    .to(next(self.parameters()).device)
+                )
+
+            # print(mask.shape)
+            # mask = None
+            # if self.padding is not None:
+            #     size_prefix = item[2]
+            #     idx = torch.arange(self.seq_len).unsqueeze(0)
+            #     size_expand = size_prefix.unsqueeze(1)
+            #     mask = (idx >= size_expand).to(
+            #         next(self.parameters()).device
+            #     )  # used to zero out element in the reconstruction loss
+
+            # x_batch = x_batch.to(next(self.parameters()).device)
+            # labels = labels.to(next(self.parameters()).device)
+
+            x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
+                x_batch, labels, mask, label_mask
+            )
+            # prior_weights = (
+            #     self.prior_weights_layers(
+            #         labels.view(labels.size(0), -1)
+            #         if not self.complexe_w
+            #         else labels
+            #     )
+            #     if self.prior_weights_layers
+            #     else self.prior_weights
+            # )
+            if label_mask is None:
+                label_mask = mask  ##to delete
+            prior_weights = self.get_prior_weight(labels, label_mask)
 
             x_loss = x_batch.permute(0, 2, 1)  ##to delete
+            if loss_full:
+                x_loss = x_loss.clone()
+                mask_expanded = mask.unsqueeze(1).expand_as(
+                    x_loss
+                )  # use mask to combine the label and the prior
+                x_loss[mask_expanded] = labels.permute(0, 2, 1)[mask_expanded]
 
+            loss_mask = (
+                ~mask if (not loss_full) and (mask is not None) else None
+            )  # to delete
             loss = VAE_vamp_prior_loss(
                 x_loss,  # x_batch.permute(0, 2, 1),
                 x_recon,
@@ -833,6 +1001,7 @@ class CVAE_TCN_Vamp(nn.Module):
                 pseudo_log_var,
                 scale=self.log_std,
                 vamp_weight=prior_weights,
+                mask=loss_mask,
             )
             total_loss += loss.item()
             kl = vamp_prior_kl_loss(
@@ -846,6 +1015,7 @@ class CVAE_TCN_Vamp(nn.Module):
             mse = reconstruction_loss2(
                 x_loss,  # x_batch.permute(0, 2, 1),
                 x_recon,
+                loss_mask,
             )
             cur_size = x_batch.size(0)
             total_mse += mse.item() / cur_size
@@ -923,11 +1093,7 @@ class CVAE_TCN_Vamp(nn.Module):
 
             print(self.prior_weights.tolist())
 
-            mu, log_var = (
-                self.pseudo_inputs_latent()
-                if not self.conditioned_pseudo_in
-                else self.pseudo_inputs_latent(label)
-            )
+            mu, log_var = self.pseudo_inputs_latent()
             # print("mu", mu.shape)
             # print("log_var ", log_var.shape)
         distrib = create_mixture(
@@ -948,11 +1114,16 @@ class CVAE_TCN_Vamp(nn.Module):
         device = next(self.parameters()).device
         samples = []
         for _ in range(0, num_samples, batch_size):
+            # print("sizes fun : ", labels.shape, batch_size)
             current_batch_size = min(batch_size, num_samples - len(samples))
             z = self.sample_from_conditioned_prior(
-                current_batch_size, labels[0]
+                current_batch_size,
+                labels,
             ).to(device)
             print(labels.shape)
+            # if z.shape[1] != self.in_channels:
+            #     z = z.permute(0,2,1)
+            labels = labels.permute(0, 2, 1)
             generated_data = self.decode(z, labels).detach().cpu()
             samples.append(generated_data)
         final_samples = torch.cat(samples)
@@ -1020,72 +1191,3 @@ class CVAE_TCN_Vamp(nn.Module):
         self.eval()
         with torch.no_grad():
             return self.pseudo_labels_layer.forward()
-
-    def save_model_ONNX(self, save_dir: str, opset_version: int = 17):
-        """
-        Exports each neural net of the CVAE into ONNX files.
-        The path where these neural nets are saved is save_dir.
-        The name of each submodule will define the name of each file.
-
-        Args:
-        save_dir (str): Path to the directory to save the ONNX files.
-        opset_version (int): ONNX opset version.
-        """
-        os.makedirs(save_dir, exist_ok=True)
-
-        dummy_inputs = {
-            "encoder": (
-                torch.randn(1, self.in_channels, self.seq_len).to(
-                    next(self.parameters()).device
-                ),
-                torch.randn(1, 1, self.seq_len).to(
-                    next(self.parameters()).device
-                ),
-            ),
-            "decoder": (
-                torch.randn(1, self.latent_dim).to(
-                    next(self.parameters()).device
-                ),
-                torch.randn(1, self.label_latent).to(
-                    next(self.parameters()).device
-                ),
-            ),
-            "pseudo_inputs_layer": (),
-            "pseudo_labels_layer": (),
-            "labels_encoder_broadcast": torch.randn(1, self.label_dim).to(
-                next(self.parameters()).device
-            ),
-            "labels_decoder_broadcast": torch.randn(1, self.label_dim).to(
-                next(self.parameters()).device
-            ),
-            "prior_weights_layers": torch.randn(1, self.label_dim).to(
-                next(self.parameters()).device
-            ),
-        }
-
-        for name, module in self.named_children():
-            if isinstance(module, nn.Module):
-                self.eval()
-                file_path = os.path.join(save_dir, f"{name}.onnx")
-                print(f"Exporting {name} to {file_path}")
-
-                inputs = dummy_inputs[name]
-
-                if not isinstance(inputs, tuple):
-                    inputs = (inputs,)  # wrap in tuple if needed
-
-                try:
-                    torch.onnx.export(
-                        module,
-                        inputs,
-                        file_path,
-                        input_names=[f"input_{i}" for i in range(len(inputs))],
-                        output_names=[f"output"],
-                        dynamic_axes={
-                            f"input_{i}": {0: "batch"}
-                            for i in range(len(inputs))
-                        },
-                        opset_version=opset_version,
-                    )
-                except Exception as e:
-                    print(f"[ERROR] Failed to export {name}: {e}")

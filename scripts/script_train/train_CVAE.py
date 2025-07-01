@@ -15,9 +15,9 @@ import torch
 
 from data_orly.src.generation.data_process import (
     Data_cleaner,
-    return_traff_per_typecode,
-    filter_missing_values,
     compute_time_delta,
+    filter_missing_values,
+    return_traff_per_typecode,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
@@ -244,7 +244,6 @@ def main() -> int:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
-        condition_pseudo_inputs=bool(args.cond_pseudo),
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))

@@ -16,6 +16,9 @@ from traffic.core import Flight, Traffic
 
 ### Function to get the mean end point of the trajectories
 def get_mean_end_point(traff: Traffic) -> tuple:
+    """
+    Returns the mean end point of all the trajectories in the traffic
+    """
     total_lat = 0
     total_long = 0
     for flight in traff:
@@ -31,6 +34,9 @@ def get_mean_end_point(traff: Traffic) -> tuple:
 
 
 def get_mean_start_point(traff: Traffic) -> tuple:
+    """
+    Returns the mean of the start point of all the trajectories in the traffic
+    """
     total_lat = 0
     total_long = 0
     for flight in traff:
@@ -47,6 +53,10 @@ def get_mean_start_point(traff: Traffic) -> tuple:
 
 
 def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
+    """
+    Merges traffic.
+    If total is false balances the two traffic, by undersampling all traffics to the size of the smallest one
+    """
     traffics = [
         Traffic.from_file(file_name).aircraft_data() for file_name in file_names
     ]
@@ -64,38 +74,15 @@ def traffic_random_merge(file_names: list[str], total: bool = False) -> Traffic:
 
 
 def is_ascending(traff: Traffic) -> bool:
+    """used to chech if a traffic contains take off"""
     vr_mean = traff.data["vertical_rate"].mean()
     return vr_mean > 0
-
-
-def compute_diff(
-    traff: Traffic, columns: list[str], start_w_0: bool = False
-) -> Traffic:
-    data = traff.data
-    data_diff = data[columns].diff()
-    if start_w_0:
-        data_diff = data_diff.fillna(0)
-    else:
-        data_diff.iloc[0] = data[columns].iloc[0]
-
-    data_diff.columns = [f"{col}_delta" for col in data_diff.columns]
-    data_diff = pd.concat([data, data_diff])
-
-    return Traffic(data_diff)
-
-
-def undo_diff(
-    data_og: pd.DataFrame, columns_diff: list[str], start_w_0: bool = False
-) -> Traffic:
-    data = data_og[columns_diff].cumsum()
-    data.columns = [col.replace("_delta", "") for col in data.columns]
-    data = pd.concat([data, data_og["timedelta"]], axis=1)
-    return data
 
 
 def traffic_only_chosen(
     traff: Traffic, chosen_typecodes: list[str], seq_len: int
 ) -> tuple[Traffic, list[str]]:
+    """Returns the selected typecodes in order and the filtered traffic containing only this datasets"""
     data = traff.data
 
     typecodes = [flight.typecode for flight in traff]
@@ -108,13 +95,16 @@ def traffic_only_chosen(
         for typecode, _ in num_typecodes.most_common()
         if typecode in chosen_typecodes
     ]
-    filtered_data = data[data["typecode"].isin(chosen_typecodes)]
+    filtered_data = data[
+        data["typecode"].isin(chosen_typecodes)
+    ]  ##change by query
     new_traff = Traffic(filtered_data)
 
     return new_traff, ordered_typecodes
 
 
 def add_time_deltas(f: Flight) -> Flight:
+    """Adds time deltas to a flight"""
     df = f.data
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     return f.assign(
@@ -135,48 +125,45 @@ def compute_time_delta(t: Traffic) -> Traffic:
 
 
 class Data_cleaner:
+    """Object that prepare the take off or landing dataset to be used by the model"""
+
     def __init__(
         self,
-        file_name: str = None,
-        columns: list[str] = ["track", "altitude", "groundspeed", "timedelta"],
-        seq_len: int = 200,
-        file_names: list[str] = [],
-        airplane_types_num: int = -1,
-        chosen_typecodes: list[str] = [],
+        file_name: str = None,  ##file to be loaded
+        columns: list[str] = [
+            "track",
+            "altitude",
+            "groundspeed",
+            "timedelta",
+        ],  # columns to be selected to be used by the model
+        seq_len: int = 200,  # the number of point in the file flights
+        airplane_types_num: int = -1,  # number of airplanes models to consider, if different than 10 uses the 10 most commun aircraft moels trajectories
+        chosen_typecodes: list[
+            str
+        ] = [],  # list of typecodes to consider, left it to [] if airplane_types_num is different from -1
         total: bool = False,
-        traff: Traffic = None,
-        aircraft_data: bool = True,
-        min_max: MinMaxScaler = None,
+        traff: Traffic = None,  # traffic to load, to use if file name is none
+        min_max: MinMaxScaler = None,  # put the scaler you want to use, if None will create the min max scaler itself
         diff: bool = False,
     ):
         # Check if we have any filename provided
-        self.diff = diff
-        if len(file_names) == 0 and not file_name and traff is None:
-            raise ValueError("file_name and file_names are both None")
+        if not file_name and traff is None:
+            raise ValueError("No traffic given")
 
-        # Creating the data from one or several files
-
+        # defininig the traffic
         if traff is not None:
             self.basic_traffic_data = traff
         elif file_name:
             self.basic_traffic_data = Traffic.from_file(file_name)
-        else:
-            self.basic_traffic_data = traffic_random_merge(file_names, total)
 
         if "timedelta" not in self.basic_traffic_data.data.columns:
             self.basic_traffic_data = compute_time_delta(
                 self.basic_traffic_data
             )
 
-        if (
-            aircraft_data
-            and "typecode" not in self.basic_traffic_data.data.columns
-        ):
+        if "typecode" not in self.basic_traffic_data.data.columns:
             self.basic_traffic_data = self.basic_traffic_data.aircraft_data()
 
-        # print("first test 50", self.basic_traffic_data["394c0f"].data)
-
-        self.file_names = file_names
         self.total = total
 
         # If we want to study only the top airplane_types_num most common typecodes
@@ -195,58 +182,50 @@ class Data_cleaner:
                     self.basic_traffic_data, chosen_typecodes, seq_len=seq_len
                 )
             )
-        print(chosen_typecodes_temp)
-        # print("second test 50", self.basic_traffic_data["394c0f"].data)
-        # save the chose types and their order
+
         self.chosen_types = (
             chosen_typecodes_temp
             if len(chosen_typecodes) != 0
-            else [label for label, _ in self.get_top_10_planes()]
+            else [label for label, _ in self.get_top_n_typecodes()]
         )
         print(self.chosen_types)
 
-        if diff:  # computes the deltas and sets them as the columns to use
-            columns.remove("timedelta")
-            self.basic_traffic_data = compute_diff(
-                self.basic_traffic_data, columns=columns
-            )
-            self.columns = [f"{col}_delta" for col in columns] + ["timedelta"]
-
         self.columns = columns
+        # define scaler
         self.fit_scale = True
         if not min_max:
             self.scaler = MinMaxScaler(feature_range=(-1, 1))
             self.fit_scale = False
         else:
             self.scaler = min_max
+
         self.n_traj = len(self.basic_traffic_data)
         self.seq_len = seq_len
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
-
-        # Allows to see which file traectory are landing or taking off
-        if len(file_names) != 0:
-            self.traffic_ascend = self.is_ascedending_per_traffic()
 
     def get_typecodes_labels(self) -> list[str]:
         """
         Returns the typecodes in the order of interpretation
         """
         return self.chosen_types
-    
 
-    def comp_vertical_rates(self)->Traffic:
+    def comp_vertical_rates(self) -> Traffic:
         """
         Computes the vertical rates of the underlying traffic.
         If a column vertical_rate already existed it overwrites it
         """
-        if 'vertical_rate' in self.basic_traffic_data.data.columns: #deleting the existing vertical rate column
-            self.basic_traffic_data= self.basic_traffic_data.drop(columns = ['vertical_rate'])
+        if (
+            "vertical_rate" in self.basic_traffic_data.data.columns
+        ):  # deleting the existing vertical rate column
+            self.basic_traffic_data = self.basic_traffic_data.drop(
+                columns=["vertical_rate"]
+            )
         self.basic_traffic_data = compute_vertical_rate(self.basic_traffic_data)
         return self.basic_traffic_data
 
-
     def return_typecode_array(self, typecode: str):
+        """Returns the trajectories linked to the typecode in entry as a scaled tensor"""
         traffic = return_traff_per_typecode(
             self.basic_traffic_data, [typecode]
         )[0]
@@ -255,7 +234,8 @@ class Data_cleaner:
         return data
 
     def traffic_only_top_n(self, top_num: int, tra: Traffic) -> Traffic:
-        top_10 = self.get_top_10_planes()
+        """Returns the traffic formed of only the n most commun typecodes"""
+        top_10 = self.get_top_n_typecodes(top_num)
         bound = min(top_num, len(top_10))
         top_n = top_10[:bound]
         top_n_typecodes = [keys for keys, _ in top_n]
@@ -272,7 +252,7 @@ class Data_cleaner:
 
     def traffic_per_label(self) -> list[Traffic]:
         """
-        Return the 10 traffics containing only planes from the 10 most common typecodes
+        Return a traffic per defined label (typecode)
         """
         x_df = self.basic_traffic_data.data
         if "typecode" not in x_df.columns:
@@ -292,6 +272,7 @@ class Data_cleaner:
         landing: bool = False,
         labels: list[str] = [],
     ) -> Traffic:
+        """Convert a dataloader to a traffic"""
         list_traff = []
         i = 0
         for batch in data:
@@ -300,11 +281,7 @@ class Data_cleaner:
             i += 1
             list_traff.append(batch[0])
         total_tensor = torch.cat(list_traff, dim=0)
-        return (
-            self.output_converter(total_tensor, landing=landing)
-            if len(labels) == 0
-            else self.output_converter_several_datasets(total_tensor, labels)
-        )
+        return self.output_converter(total_tensor, landing=landing)
 
     def output_converter(
         self,
@@ -313,8 +290,8 @@ class Data_cleaner:
         lat_lon: bool = True,
         mean_point: tuple[float, float] = None,
         seq_len: int = None,
-        end_point: tuple[float, float] = None,
     ) -> Traffic:
+        """Converts the output of the model into an readable traffic"""
         if not seq_len:
             seq_len = self.seq_len
         if not mean_point:
@@ -363,184 +340,10 @@ class Data_cleaner:
             )
         return Traffic(x_df)
 
-    def is_ascedending_per_traffic(self) -> list[bool]:
-        traffics = self.return_traff_per_dataset()
-        return [is_ascending(traff) for traff in traffics]
-
-    def get_mean_points(self) -> list[tuple]:
-        all_means = []
-        traffics = self.return_traff_per_dataset()
-        is_ascend = self.traffic_ascend
-        assert len(traffics) == len(is_ascend)
-        for i, traff in enumerate(traffics):
-            mean_point = (
-                get_mean_start_point(traff)
-                if is_ascend[i]
-                else get_mean_end_point(traff)
-            )
-            all_means.append(mean_point)
-        return all_means
-
-    def output_converter_several_datasets(
-        self, x_recon: torch.Tensor, labels: list[str]
-    ) -> Traffic:
-        mean_points = self.get_mean_points()
-
-        coordinates = [
-            {"latitude": mean_point[0], "longitude": mean_point[1]}
-            for mean_point in mean_points
-        ]
-
-        batch_size = x_recon.size(0)
-        x_np = x_recon.cpu().detach().numpy()
-        x_np = self.unscale(x_np)
-        x_np = x_np.reshape(-1, self.num_channels)
-        x_df = pd.DataFrame(x_np, columns=self.columns)
-
-        if "altitude" not in self.columns:
-            altitude = [10000 for _ in range(len(x_df))]
-            x_df["altitude"] = altitude
-
-        if "timedelta" not in self.columns:
-            time_delta = [2 * (i // self.seq_len) for i in range(len(x_df))]
-            x_df["timedelta"] = time_delta
-
-        x_df["timestamp"] = datetime.datetime(2020, 5, 17) + x_df[  # noqa: DTZ001
-            "timedelta"
-        ].apply(lambda x: datetime.timedelta(seconds=x))
-        x_df["icao24"] = [str(i // self.seq_len) for i in range(len(x_df))]
-        print(len(labels), len(x_df), len(x_df) // self.seq_len)
-        x_df["label"] = [
-            labels[i // self.seq_len] for i in range(self.seq_len * len(labels))
-        ]
-        # print( x_df["label"])
-
-        grouped_x_df = {
-            group: group_df for group, group_df in x_df.groupby("label")
-        }
-
-        is_ascend = self.traffic_ascend
-        all_labels = self.return_unique_labels_datasets()
-        all_dfs = []
-        print(all_labels)
-        for i, l in enumerate(all_labels):
-            print(l)
-            df = grouped_x_df.get(l, pd.DataFrame()).reset_index(drop=True)
-            if len(df) == 0:
-                print("la")
-                continue
-            coord = coordinates[i]
-            df = compute_latlon_from_trackgs(
-                df,
-                n_samples=len(df) // self.seq_len,
-                n_obs=self.seq_len,
-                coordinates=coord,
-                forward=is_ascend[i],
-            )
-
-            all_dfs.append(df)
-
-        f_df = pd.concat(all_dfs)
-
-        return Traffic(f_df)
-
-    def clean_data(self) -> np.ndarray:
-        flights = []
-        for i, flight in enumerate(self.basic_traffic_data):
-            data = flight.data
-            data = data[self.columns]
-            np_data = data.to_numpy()
-            flights.append(np_data)
-            # if flight.data.isna().any().any() and i == 0:
-            #     print(f"Missing values in flight {i}")  # toujours vrai
-            # # create data loader
-
-        # print(
-        #     "Nan values remaining: ",
-        #     self.basic_traffic_data.data[self.columns].isna().any(axis=1).sum(),
-        # )
-        # counts = []
-        # for f in self.basic_traffic_data:
-        #     df = f.data
-        #     count = df[self.columns].isna().any(axis=1).sum() / len(df)
-        #     counts.append(count)
-        #     # print(count)
-
-        # import statistics
-
-        # quartiles = statistics.quantiles(counts, n=4, method="inclusive")
-        # mean = statistics.mean(counts)
-        # median = statistics.median(counts)
-        # print(counts.count(0))
-        # print("q4 ", quartiles[2])
-        # percentile_90 = np.percentile(counts, 82)
-
-        # print("80th percentile:", percentile_90)
-
-        # print(mean)
-        # print(median)
-
-        # print(self.basic_traffic_data[0].data[self.columns].tail(5))
-        # print(self.basic_traffic_data[0].data[self.columns].dtypes)
-        # nan_rows = self.basic_traffic_data[0].data[self.columns][
-        #     self.basic_traffic_data[0].data[self.columns].isna().any(axis=1)
-        # ]
-        # print(nan_rows)
-        # print(self.basic_traffic_data.data[self.columns].isna().any().any())
-        trajectories = np.stack(flights).astype(np.float32)
-
-        # Store the original shape for later reconstruction
-        original_shape = (
-            trajectories.shape
-        )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
-
-        # Reshape to 2D for scaling: each row is an observation
-        trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
-
-        # Initialize and fit the scaler
-        trajectories_scaled = self.scaler.fit_transform(trajectories_reshaped)
-
-        # Reshape back to the original dimensions
-        trajectories_scaled = trajectories_scaled.reshape(original_shape)
-
-        return trajectories_scaled
-
-    def clean_data_several_datasets(self) -> np.ndarray:
-        flights_og_list = [
-            self.basic_traffic_data.data.iloc[
-                i * self.seq_len : (i + 1) * self.seq_len
-            ]
-            for i in range(len(self.basic_traffic_data))
-        ]
-        # checked
-
-        flights = []
-        for data in flights_og_list:
-            data = data[self.columns]
-            np_data = data.to_numpy()
-            flights.append(np_data)
-
-        trajectories = np.stack(flights).astype(np.float32)
-
-        # Store the original shape for later reconstruction
-        original_shape = (
-            trajectories.shape
-        )  # e.g., (n_flights, n_rows, n_features)  # noqa: E501
-
-        # Reshape to 2D for scaling: each row is an observation
-        trajectories_reshaped = trajectories.reshape(-1, original_shape[-1])
-
-        # Initialize and fit the scaler
-        trajectories_scaled = self.scaler.fit_transform(trajectories_reshaped)
-
-        # Reshape back to the original dimensions
-        trajectories_scaled = trajectories_scaled.reshape(original_shape)
-
-        return trajectories_scaled
-
     def clean_data_specific(
-        self, data_to_clean, fit_scale: bool = True
+        self, data_to_clean: Traffic, fit_scale: bool = True
     ) -> np.ndarray:
+        """turns the the entered traffic into a scaled np array"""
         if data_to_clean is None:
             return np.array([])
         flights = []
@@ -573,46 +376,21 @@ class Data_cleaner:
 
         return trajectories_scaled
 
+    def clean_data(self) -> np.ndarray:
+        """turns the underlying traffic into a scaled np array"""
+        return self.clean_data_specific(
+            self.basic_traffic_data, fit_scale=not self.fit_scale
+        )
+
+
     def return_labels(self) -> np.ndarray:
+        """Returns all the labels in one hot encoded labels"""
         labels = np.array(
             [flight.typecode for flight in self.basic_traffic_data]
         ).reshape(-1, 1)
         return self.one_hot.fit_transform(labels)
         # return np.array([flight.typecode for flight in self.basic_traffic_data])
 
-    def return_labels_datasets(self) -> np.ndarray:
-        """
-        Returns labels that represents the dataset of origin of the data
-        """
-        data_set_len = len(self.basic_traffic_data)
-        number_of_files = len(self.file_names)
-        fligh_per_dataset = data_set_len // number_of_files
-        print(fligh_per_dataset)
-
-        labels = [f"d{i // fligh_per_dataset}" for i in range(data_set_len)]
-        labels_array = np.array(labels).reshape(-1, 1)
-        return self.one_hot.fit_transform(labels_array)
-
-    def return_unique_labels_datasets(self) -> list[str]:
-        return [f"d{i}" for i in range(len(self.file_names))]
-
-    def return_traff_per_dataset(self) -> list[Traffic]:
-        data_set_len = len(self.basic_traffic_data)
-        number_of_files = len(self.file_names)
-        fligh_per_dataset = data_set_len // number_of_files
-        data = self.basic_traffic_data
-
-        traff_list = [
-            Traffic(
-                data.data.iloc[
-                    i * fligh_per_dataset * self.seq_len : (i + 1)
-                    * fligh_per_dataset
-                    * self.seq_len
-                ]
-            )
-            for i in range(number_of_files)
-        ]
-        return traff_list
 
     ### Function to get the mean end point of the trajectories
     def get_mean_end_point(self) -> tuple:
@@ -623,53 +401,34 @@ class Data_cleaner:
 
     ### Function to unscale the data
     def unscale(self, traj: Traffic) -> np.ndarray:
+        """allows to unscale the data passes in a traffic in entry"""
         original_shape = traj.shape
         traj_reshaped = traj.reshape(-1, original_shape[-1])
         traj_unscaled = self.scaler.inverse_transform(traj_reshaped)
         traj_unscaled = traj_unscaled.reshape(original_shape)
         return traj_unscaled
 
-    def first_n_flight_delta_time(
-        self, traf: Traffic, n_flight: int = 10, n_point: int = 10
-    ) -> list[list[float]]:
-        return [
-            flight.data["timedelta"][:n_point] for flight in traf[:n_flight]
-        ]
-
-    def get_top_10_planes(self) -> list[tuple[str, int]]:
+    def get_top_n_typecodes(self, n_type: int = 10) -> list[tuple[str, int]]:
+        """returs the n_type most commun typecodes in the dataset"""
         data = self.basic_traffic_data
         # start_time = [flight.start for flight in data]
         df = data.data
 
         flight_counts = df["typecode"].value_counts()
-        top_10_planes = flight_counts.head(10).items()
+        top_10_planes = flight_counts.head(n_type).items()
         return list(top_10_planes)
 
-    def reordered_labels(
-        self, labels: np.ndarray, num_flight: int = None
-    ) -> np.ndarray:
-        """
-        Reorder the labels to follow the order of the list of datasets.
-        to use when labels are related to the dataset of origin of the traffics
-        Labels must be an array of strings of shape (n_flight,1)
-        """
-        if not num_flight:
-            num_flight = len(labels)
-        labels_order = self.return_unique_labels_datasets()
-        labels_count = dict(Counter(labels.flatten().tolist()[:num_flight]))
-        reordered_labels = [
-            label for label in labels_order for _ in range(labels_count[label])
-        ]
-        return np.array(reordered_labels).reshape(-1, 1)
 
     def transform_back_labels_tensor(
         self, label_tensor: torch.Tensor
     ) -> np.ndarray:
+        """transform a tensor of labels back into a nd array os strings corresponding to every label"""
         array = label_tensor.cpu().numpy()
         inverse = self.one_hot.inverse_transform(array)
         return inverse
 
     def return_flight_id_for_label(self, label: str) -> list[str]:
+        """returns all the flights ids, linked to a specific aircraft"""
         labels = [
             f.flight_id for f in self.basic_traffic_data if f.typecode == label
         ]
@@ -695,64 +454,10 @@ def return_traff_per_typecode(
     return traffs_l
 
 
-def filter_outlier(traff: Traffic) -> Traffic:
-    def simple(flight: Flight) -> Flight:
-        return flight.assign(simple=lambda x: flight.shape.is_simple)
-
-    t_to = traff.iterate_lazy().pipe(simple).eval(desc="")
-    t_to = t_to.query("simple")
-    return t_to
-
-
-# Returns true if the flight path is considered smooth enough checks at each segment that it is in a similar direction as the precedent n_segment
-def flight_soft(flight: Flight, n_segment: int = 3, limit: float = 0) -> bool:
-    # data = flight.data
-    # latitudes = data["latitude"]
-    # longitude = data["longitude"]
-    # latitude_vectors = latitudes[1:] - latitudes[:-1]
-    # longitude_vectors = longitude[1:] - longitude[:-1]
-    # latitudes_padding = pd.Series([0 for _ in range(n_segment-1)],name="latitude")
-    # longitude_padding = pd.Series([0 for _ in range(n_segment-1)],name="longitude")
-    # latitude_vectors = pd.concat([latitudes_padding,latitude_vectors])
-    # longitude_vectors = pd.concat([longitude_padding,longitude_vectors])
-    # latitude_mean_vectors = latitude_vectors.rolling(window=n_segment).mean()
-    # longitude_mean_vectors = longitude_vectors.rolling(window=n_segment).mean()
-    # dot_product = (latitude_vectors[n_segment-1:] * latitude_mean_vectors[n_segment-1:] ) + (longitude_vectors[n_segment-1:]  * longitude_mean_vectors[n_segment-1:] )
-    # return (dot_product > limit).any()
-    data = flight.data
-    latitudes = data["latitude"]
-    longitude = data["longitude"]
-
-    # Compute vectors between consecutive points
-    latitude_vectors = latitudes.diff().fillna(0)
-    longitude_vectors = longitude.diff().fillna(0)
-
-    # Compute rolling means of the vectors
-    latitude_mean_vectors = latitude_vectors.rolling(window=n_segment).mean()
-    longitude_mean_vectors = longitude_vectors.rolling(window=n_segment).mean()
-
-    # Compute dot product
-    dot_product = (latitude_vectors * latitude_mean_vectors) + (
-        longitude_vectors * longitude_mean_vectors
-    )
-
-    # Check if any dot product exceeds the limit
-    return (dot_product > limit).any()
-
-
-def filter_smoothness(
-    traff: Traffic, n_segment: int = 3, limit: float = 0
-) -> Traffic:
-    def simple(flight: Flight) -> Flight:
-        test_val = flight_soft(flight, n_segment, limit)
-        return flight.assign(simple=lambda _: test_val)
-
-    t_to = traff.iterate_lazy().pipe(simple).eval(desc="")
-    t_to = t_to.query("simple")
-    return t_to
 
 
 def compute_vertical_rate_flight(flight: Flight) -> Flight:
+    """Computes the vertical rate of a flight"""
     data = flight.data
     delta_time = data["timedelta"].diff()
     delta_altitude = data["altitude"].diff()
@@ -762,6 +467,9 @@ def compute_vertical_rate_flight(flight: Flight) -> Flight:
 
 
 def compute_vertical_rate(traffic: Traffic) -> Traffic:
+    """
+    Computes all the vertical rates in the data
+    """
     if "vertical_rate" in traffic.data.columns:
         return traffic
     return (
@@ -815,6 +523,7 @@ def save_smaller_traffic(
 
 
 def combine_save(traffs: list[Traffic], path: str) -> None:
+    """Combines the traffs in the list and saves them to path"""
     final_traff: Traffic = sum(traffs)
     final_traff.to_pickle(path)
     return

@@ -1,4 +1,5 @@
 from collections import Counter
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -366,7 +367,6 @@ class Pseudo_inputs_generator(nn.Module):
         number_of_points: int,
         pseudo_inputs_num: int,
         dropout: float,
-        last_chanel_bool :bool = False,
     ) -> None:
         super(Pseudo_inputs_generator, self).__init__()
         self.number_of_channels = number_of_channels
@@ -381,8 +381,6 @@ class Pseudo_inputs_generator(nn.Module):
         self.relu = nn.ReLU()
         self.second_layer = nn.Linear(pseudo_inputs_num, second_dim)
         self.dropout = nn.Dropout(dropout)
-
-        self.last_channel_bool = last_chanel_bool
 
 
     def forward(self) -> torch.Tensor:

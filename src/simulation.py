@@ -79,6 +79,7 @@ def reconstruct_navpoints(traj: "Flight") -> "Iterator[pd.DataFrame]":
 
 
 def navpoints_table(flight: "Flight") -> Optional["Flight"]:
+    """Returns the navpoints to which the flight is alligned and the time for which they are alligned"""
     from traffic.data import navaids
 
     navaids_extent = navaids.extent(flight, buffer=0.1)
