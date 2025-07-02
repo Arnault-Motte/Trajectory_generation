@@ -108,6 +108,13 @@ def main() -> int:
         help="1 if the pseudo inputs must be conditioned",
     )
 
+    praser.add_argument(
+        "--batch_size",
+        type=int,
+        default=500,
+        help="The batch size for training",
+    )
+
     praser.add_argument("--scale", type=float, default=1, help="inital scale")
 
     args = praser.parse_args()
@@ -181,6 +188,7 @@ def main() -> int:
     else:
         combined_traff = traff
 
+    # combined_traff = combined_traff.sample(200)
     print("yo")
     print(len(combined_traff))
     print(combined_traff.data.columns)
@@ -244,12 +252,15 @@ def main() -> int:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
+        pseudo_labels=True,
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=500,step_size=100)
+    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=args.batch_size,step_size=100)
     model.save_model(args.weights)
+    scalers_path = args.weights.split('.')[0] + "_scalers.pkl"
+    data_cleaner.save_scalers(scalers_path)
     return 0
 
 

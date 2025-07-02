@@ -1,0 +1,1 @@
+uv run data_orly/scripts/Test_sim/scn_gen/test_gen_ONNX.py --data /data/data/arnault/data/final_data/LFPO_all_A320_010.pkl --weight_file data_orly/src/generation/models/saved_weights/full/CVAE_full_A320_010.pth --nf 200 --cond 1 --typecode_to_gen B738 --scene_file test_all --l_dim 64 --pseudo_in 1000 --cuda 1

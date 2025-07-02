@@ -10,6 +10,8 @@ from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 from torch.distributions import Independent, Normal
 from tqdm import tqdm
+import altair as alt
+import pandas as pd
 
 import numpy as np
 from data_orly.src.generation.data_process import (
@@ -743,3 +745,94 @@ def vertical_rate_profile(
     )
 
     return
+
+
+def vertical_rate_profile_2(
+    traffic: Traffic, path: str, distance: bool = True
+) -> None:
+    """
+    Improved version using altair
+    """
+
+    # max_south = traffic.data["longitude"].max()
+    # bound = (max_south - 0.1, max_south + 0.1)
+
+    # def bound_f(f: Flight):
+    #     if bound[0] < f.data["longitude"].iloc[-1] < bound[1]:
+    #         return f
+    #     return None
+    # plot_traffic(
+    #     traffic, path.split(".")[0] + "_traff.png", background=False
+    # )
+    # traffic = traffic.pipe(bound_f).eval(desc="l")
+    # plot_traffic(traffic, path.split(".")[0] + "_traff_limited.png", background=False)
+
+    traffic = traffic.resample("1s").eval(desc="")
+    alts = []
+    timdeltas = []
+    for flight in traffic:
+        alts.append(flight.data["altitude"].to_list())
+        timdeltas.append(flight.data["timedelta"].to_list())
+
+    mean_flight = pd.DataFrame()
+
+    max_len = max(len(arr) for arr in alts)
+    mean_flight["altitude"] = np.nanmean(
+        np.array(
+            [
+                np.pad(
+                    np.array(arr),
+                    (0, max_len - len(arr)),
+                    constant_values=np.nan,
+                )
+                for arr in alts
+            ]
+        ),axis=0
+    )
+    mean_flight["timedelta"] = range(max_len)
+    mean_flight = Flight(mean_flight)
+
+    traffic = traffic.cumulative_distance().eval(
+        desc="Computing cumulative distance", max_workers=4
+    )
+    flights = [
+        f.chart()
+        .encode(
+            x=alt.X(
+                "cumdist" if distance else "timedelta",
+                title="Distance from runway (Nm)",
+            ),
+            y=alt.Y(
+                "altitude",
+                title=None,
+                scale=alt.Scale(domain=(0, 20000), clamp=True),
+            ),
+            color=alt.value("#4c78a8"),
+            opacity=alt.value(0.2),
+        )
+        .transform_filter("datum.altitude < 20000")
+        for f in traffic
+    ]
+
+    flights.append(
+        mean_flight.chart()
+        .encode(
+            x=alt.X(
+                "cumdist" if distance else "timedelta",
+                title="Distance from runway (Nm)",
+            ),
+            y=alt.Y(
+                "altitude",
+                title="Mean profile",
+                scale=alt.Scale(domain=(0, 20000), clamp=True),
+            ),
+            color=alt.value("red"),
+            opacity=alt.value(1),
+        )
+        .transform_filter("datum.altitude < 20000")
+    )
+
+    chart = alt.layer(*flights).properties(
+        title="Departure altitude (in ft)", width=500, height=170
+    )
+    chart.save(path)

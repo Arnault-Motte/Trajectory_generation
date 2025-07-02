@@ -811,6 +811,8 @@ class CVAE_TCN_Vamp(nn.Module):
             if self.padding is not None:
                 pseudo_labels = None
 
+            if self.pseudo
+
             mu, log_var = self.encode(pseudo_inputs, pseudo_labels)
 
         if label is not None:

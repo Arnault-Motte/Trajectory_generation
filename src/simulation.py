@@ -329,7 +329,7 @@ def gen_instruct_f(
     return the instruct for a specific flight in a scenario
     """
 
-    means = mean_alt_spd(flight, nav_p)
+   
 
     f_data = flight.data
     acid = f_data.iloc[0]["flight_id"]
@@ -340,6 +340,8 @@ def gen_instruct_f(
         with open(path_log.split(".")[0] + "_denied_flight.txt", "a") as file:
             file.write(flight.flight_id + "\n")
         return ""
+    
+    means = mean_alt_spd(flight, nav_p)
 
     prev_wpt = ""
     previous_start = nav_p.data.iloc[0]["start"]

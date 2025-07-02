@@ -15,6 +15,7 @@ from data_orly.src.generation.data_process import (
     jason_shanon,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
 )
@@ -41,6 +42,43 @@ class Generator:
         traf = self.data_clean.output_converter(
             sampled, landing=True, lat_lon=lat_long
         )
+        return traf
+
+    def generate_flight_for_label_vamp(
+        self,
+        label: str,
+        vamp: int,
+        n_points: int,
+        batch_size: int = 500,
+        lat_lon: bool = True,
+    ) -> Traffic:
+        model = self.model
+        model.eval()
+
+        with torch.no_grad():
+            with tqdm(total=3, desc=f"Processing {label}") as pbar:
+                print(label)
+                labels_array = np.array([label]).reshape(-1, 1)
+                transformed_label = self.data_clean.one_hot.transform(
+                    labels_array
+                )
+
+                pbar.update(1)
+
+                # print("|--Sampling--|")
+                labels_final = torch.Tensor(transformed_label).to(
+                    next(model.parameters()).device
+                )
+                sampled = model.generate_from_specific_vamp_prior_label(
+                    vamp, n_points, labels_final
+                )
+                pbar.update(1)
+
+                traf = self.data_clean.output_converter(
+                    sampled, landing=True, lat_lon=lat_lon
+                )
+                pbar.update(1)
+
         return traf
 
     def generate_n_flight_per_labels(
@@ -77,3 +115,47 @@ class Generator:
                     traff_list.append(traf)
 
         return traff_list
+
+
+class ONNX_Generator:
+    def __init__(self, model: CVAE_ONNX, data_clean: Data_cleaner) -> None:
+        self.model = model
+        self.data_clean = data_clean
+        self.cond = model is not None
+
+    def generate_flight_for_label_vamp(
+        self,
+        label: str,
+        vamp: int,
+        n_points: int,
+        batch_size: int = 500,
+        lat_lon: bool = True,
+    ) -> Traffic:
+        """
+        Generates n_points flights, using the entire model limiting us to one vamp prior component speifed by vamp.
+        """
+
+        model = self.model
+
+
+        with tqdm(total=3, desc=f"Processing {label}") as pbar:
+                # print(label)
+                labels_array = np.array([label]).reshape(-1, 1)
+                transformed_label = self.data_clean.one_hot.transform(
+                    labels_array
+                )
+                pbar.update(1)
+
+                # print("|--Sampling--|")
+                labels_final = torch.Tensor(transformed_label)
+                sampled = model.generate_from_specific_vamp_prior(
+                    vamp, n_points, labels_final
+                )
+                pbar.update(1)
+
+                traf = self.data_clean.output_converter(
+                    sampled, landing=True, lat_lon=lat_lon
+                )
+                pbar.update(1)
+
+        return traf

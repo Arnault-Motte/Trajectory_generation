@@ -1,5 +1,6 @@
 import datetime
 from collections import Counter
+import pickle
 
 import torch
 from scipy.spatial.distance import jensenshannon
@@ -145,8 +146,21 @@ class Data_cleaner:
         traff: Traffic = None,  # traffic to load, to use if file name is none
         min_max: MinMaxScaler = None,  # put the scaler you want to use, if None will create the min max scaler itself
         diff: bool = False,
+        one_hot: OneHotEncoder = None,
+        no_data: bool = False,
+        mean_point: tuple[float, float] = None,
     ):
         # Check if we have any filename provided
+
+        if no_data:
+            self.one_hot = one_hot
+            self.scaler = min_max
+            self.mean_point = mean_point
+            self.seq_len = seq_len
+            self.num_channels = 4
+            self.columns = columns
+            return
+
         if not file_name and traff is None:
             raise ValueError("No traffic given")
 
@@ -203,6 +217,31 @@ class Data_cleaner:
         self.seq_len = seq_len
         self.num_channels = len(columns)
         self.one_hot = OneHotEncoder(sparse_output=False)
+
+        if "vertical_rate" not in self.basic_traffic_data.data.columns:
+            self.basic_traffic_data =  self.comp_vertical_rates()
+        self.mean_point = None
+        if is_ascending(self.basic_traffic_data):
+            self.mean_point = self.get_mean_start_point()
+        else:
+            self.mean_point = self.get_mean_end_point()
+
+    def save_scalers(self,path:str)->None:
+        """
+        Saves the scaler, the mean end point, and the one hot encoder as a tuple in the designated pickle file.
+        """
+        scalers = (self.scaler,self.one_hot,self.mean_point,self.columns)
+        with open(path,"wb") as f:
+            pickle.dump(scalers,file = f)
+    
+    def load_scalers(self,path:str)->None:
+        """
+        Laods the scaler, the mean end point, and the one hot encoder as a tuple from the designated pickle file.
+        """
+        with open(path, "rb") as f:
+            self.scaler,self.one_hot,self.mean_point,self.columns = pickle.load(f)
+        return
+
 
     def get_typecodes_labels(self) -> list[str]:
         """
@@ -309,11 +348,6 @@ class Data_cleaner:
         x_np = x_np.reshape(-1, self.num_channels)
         x_df = pd.DataFrame(x_np, columns=self.columns)
 
-        if self.diff:
-            temp_col = self.columns
-            temp_col.remove("timedelta")
-            x_df = undo_diff(x_df)
-
         if "altitude" not in self.columns:
             print("No altitude recieved, possible error")
             altitude = [10000 for _ in range(len(x_df))]
@@ -382,7 +416,6 @@ class Data_cleaner:
             self.basic_traffic_data, fit_scale=not self.fit_scale
         )
 
-
     def return_labels(self) -> np.ndarray:
         """Returns all the labels in one hot encoded labels"""
         labels = np.array(
@@ -391,13 +424,16 @@ class Data_cleaner:
         return self.one_hot.fit_transform(labels)
         # return np.array([flight.typecode for flight in self.basic_traffic_data])
 
-
     ### Function to get the mean end point of the trajectories
     def get_mean_end_point(self) -> tuple:
-        return get_mean_end_point(self.basic_traffic_data)
+        if not self.mean_point:
+            self.mean_point = get_mean_end_point(self.basic_traffic_data)
+        return self.mean_point
 
     def get_mean_start_point(self) -> tuple:
-        return get_mean_start_point(self.basic_traffic_data)
+        if not self.mean_point:
+            self.mean_point =get_mean_start_point(self.basic_traffic_data)
+        return self.mean_point
 
     ### Function to unscale the data
     def unscale(self, traj: Traffic) -> np.ndarray:
@@ -417,7 +453,6 @@ class Data_cleaner:
         flight_counts = df["typecode"].value_counts()
         top_10_planes = flight_counts.head(n_type).items()
         return list(top_10_planes)
-
 
     def transform_back_labels_tensor(
         self, label_tensor: torch.Tensor
@@ -452,8 +487,6 @@ def return_traff_per_typecode(
         traff_i = traff.query(f'typecode == "{typecode}"')
         traffs_l.append(traff_i)
     return traffs_l
-
-
 
 
 def compute_vertical_rate_flight(flight: Flight) -> Flight:
@@ -640,3 +673,11 @@ def filter_missing_values_flight(
         df_clean = df.dropna(subset=columns)  # df wiht no na
         new_f = Flight(df_clean).resample(n)
         return new_f
+
+
+def return_labels(traffic:Traffic,one_hot:OneHotEncoder) -> np.ndarray:
+        """Returns all the labels in one hot encoded labels"""
+        labels = np.array(
+            [flight.typecode for flight in traffic]
+        ).reshape(-1, 1)
+        return one_hot.transform(labels)

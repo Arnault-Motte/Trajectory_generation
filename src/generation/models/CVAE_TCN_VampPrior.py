@@ -386,10 +386,12 @@ class CVAE_TCN_Vamp(nn.Module):
         num_worker: int = 4,
         init_std: float = 1,
         d_weight: bool = False,
+        pseudo_labels: bool = True,
     ):
         super(CVAE_TCN_Vamp, self).__init__()
         self.label_dim = label_dim
         self.label_latent = label_latent
+        self.pseudo_l = pseudo_labels
 
         self.latent_dim = latent_dim
         self.d_weight = d_weight
@@ -505,10 +507,21 @@ class CVAE_TCN_Vamp(nn.Module):
 
         pseudo_inputs = self.pseudo_inputs_layer.forward()
 
+        # if not self.pseudo_l:
+        #     batch_size = label.shape[0]
+        #     pseudo_labels = label.repeat_interleave(
+        #         self.pseudo_num, dim=0
+        #     )  # to use the given labels
+        #     pseudo_labels.reshape(-1,self.label_dim)
+        #     pseudo_inputs = pseudo_inputs.unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        #     pseudo_inputs = pseudo_inputs.reshape(-1,self.in_channels,self.seq_len)
+        #     print(pseudo_inputs.shape)
+        #     print(pseudo_labels.shape)
+
         mini_batch_size = 600
 
         mu, log_var = self.encode(pseudo_inputs, pseudo_labels)
-
+        # print("mu shape ", mu.shape)
         if label is not None:
             batch_size = label.shape[0]
             mu = mu.view(batch_size, self.pseudo_num, -1)
@@ -547,7 +560,11 @@ class CVAE_TCN_Vamp(nn.Module):
             )
 
         if self.prior_weights_layers:
-            return self.prior_weights_layers(labels.view(labels.size(0), -1))
+            # print(labels.shape)
+            prior_weights = self.prior_weights_layers(labels.view(labels.size(0), -1))
+            # print(prior_weights)
+            # print(prior_weights.shape)
+            return prior_weights
         else:
             return self.prior_weights
 
@@ -568,7 +585,9 @@ class CVAE_TCN_Vamp(nn.Module):
         if not conditioned:
             labels_encoder = None
 
-        mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent()
+        mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent(
+            labels if not self.pseudo_l else None
+        )
         x = x.permute(0, 2, 1)  # 500 3 200
         mu, log_var = self.encode(x, labels_encoder)
         z = self.reparametrize(mu, log_var).to(next(self.parameters()).device)
@@ -870,10 +889,9 @@ class CVAE_TCN_Vamp(nn.Module):
             data,
             labels,
             batch_size,
-            0.8,
+            0.9,
             shuffle=False,
-            num_worker=self.num_worker,
-            padding=self.padding,
+            num_worker=self.num_worker
         )
         i = 0
         batches_reconstructed = []
@@ -914,20 +932,14 @@ class CVAE_TCN_Vamp(nn.Module):
         Samples random points from the conditioned prior
         """
         with torch.no_grad():
-            prior_weights = (
-                self.prior_weights_layers(label)
-                if self.prior_weights_layers
-                else self.prior_weights
-            )
-            print("prior_weight", prior_weights.shape)
-
-            print(self.prior_weights.tolist())
-
-            mu, log_var = (
-                self.pseudo_inputs_latent()
-                if not self.conditioned_pseudo_in
-                else self.pseudo_inputs_latent(label)
-            )
+            # prior_weights = (
+            #     self.prior_weights_layers(label)
+            #     if self.prior_weights_layers
+            #     else self.prior_weights
+            # )
+            print(label.shape)
+            prior_weights = self.get_prior_weight(label)
+            mu, log_var = self.pseudo_inputs_latent()
             # print("mu", mu.shape)
             # print("log_var ", log_var.shape)
         distrib = create_mixture(
@@ -950,9 +962,10 @@ class CVAE_TCN_Vamp(nn.Module):
         for _ in range(0, num_samples, batch_size):
             current_batch_size = min(batch_size, num_samples - len(samples))
             z = self.sample_from_conditioned_prior(
-                current_batch_size, labels[0]
+                current_batch_size, labels[0].unsqueeze(0)
             ).to(device)
-            print(labels.shape)
+            print(labels[0])
+            print(labels[0].shape)
             generated_data = self.decode(z, labels).detach().cpu()
             samples.append(generated_data)
         final_samples = torch.cat(samples)
@@ -983,13 +996,35 @@ class CVAE_TCN_Vamp(nn.Module):
             )
         return output
 
+    def generate_from_specific_vamp_prior_label(
+        self, vamp_index: int, num_traj: int, label: torch.Tensor
+    ) -> torch.Tensor:
+        self.eval()
+        with torch.no_grad():
+            psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
+            chosen_mean = psuedo_means[vamp_index]
+            chosen_scale = (pseudo_scales[vamp_index] / 2).exp()
+            dist = distrib.Independent(
+                distrib.Normal(chosen_mean, chosen_scale), 1
+            )
+            sample = dist.sample(torch.Size([num_traj])).to(
+                next(self.parameters()).device
+            )
+            print(sample.shape)
+            labels = label.repeat(num_traj, 1)
+            print(labels.shape)
+            generated_traj = self.decode(sample, labels)
+
+        return generated_traj.permute(0, 2, 1)
+
     def generate_from_specific_vamp_prior(
-        self, vamp_index: int, num_traj: int
+        self, vamp_index: int, num_traj: int, label: torch.Tensor
     ) -> torch.Tensor:
         """
         Generates a flux of trajectory from a single vamp prior.
         The pseudo input used is indicated but its index.
         """
+        self.eval()
         with torch.no_grad():
             psuedo_means, pseudo_scales = self.pseudo_inputs_latent()
             chosen_mean = psuedo_means[vamp_index]
@@ -1021,7 +1056,7 @@ class CVAE_TCN_Vamp(nn.Module):
         with torch.no_grad():
             return self.pseudo_labels_layer.forward()
 
-    def save_model_ONNX(self, save_dir: str, opset_version: int = 17):
+    def save_model_ONNX(self, save_dir: str, opset_version: int = 17) -> None:
         """
         Exports each neural net of the CVAE into ONNX files.
         The path where these neural nets are saved is save_dir.
