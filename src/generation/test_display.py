@@ -28,6 +28,7 @@ from data_orly.src.generation.models.VAE_TCN_VampPrior import (
     get_data_loader,
 )
 from traffic.core import Flight, Traffic
+from pitot import aero
 
 
 ###TEST for seeing the reconstruction of the autoencoder
@@ -748,36 +749,33 @@ def vertical_rate_profile(
 
 
 def vertical_rate_profile_2(
-    traffic: Traffic, path: str, distance: bool = True
+    traffic: Traffic,
+    path: str,
+    distance: bool = True,
+    y_col: str = "altitude",
+    x_col: str = "timedelta",
 ) -> None:
     """
     Improved version using altair
     """
-
-    # max_south = traffic.data["longitude"].max()
-    # bound = (max_south - 0.1, max_south + 0.1)
-
-    # def bound_f(f: Flight):
-    #     if bound[0] < f.data["longitude"].iloc[-1] < bound[1]:
-    #         return f
-    #     return None
-    # plot_traffic(
-    #     traffic, path.split(".")[0] + "_traff.png", background=False
-    # )
-    # traffic = traffic.pipe(bound_f).eval(desc="l")
-    # plot_traffic(traffic, path.split(".")[0] + "_traff_limited.png", background=False)
-
-    traffic = traffic.resample("1s").eval(desc="")
+    
+    traffic = Traffic(traffic.data[[x_col if x_col!="CAS" else 'groundspeed',y_col,"callsign","icao24",'timestamp']])
+    # traffic = traffic.resample("2s").eval(desc="")
     alts = []
-    timdeltas = []
+
+    if x_col == "CAS":
+        cas = aero.tas2cas(traffic.data["groundspeed"], h= traffic.data["altitude"])
+        traffic = traffic.assign(CAS = cas)
+
+
     for flight in traffic:
-        alts.append(flight.data["altitude"].to_list())
-        timdeltas.append(flight.data["timedelta"].to_list())
+        alts.append(flight.data[y_col].to_list())
+
 
     mean_flight = pd.DataFrame()
-
+    
     max_len = max(len(arr) for arr in alts)
-    mean_flight["altitude"] = np.nanmean(
+    mean_flight[y_col] = np.nanmean(
         np.array(
             [
                 np.pad(
@@ -787,23 +785,27 @@ def vertical_rate_profile_2(
                 )
                 for arr in alts
             ]
-        ),axis=0
+        ),
+        axis=0,
     )
-    mean_flight["timedelta"] = range(max_len)
+    mean_flight["timedelta"] = [2*i for i in range(max_len)]
     mean_flight = Flight(mean_flight)
 
-    traffic = traffic.cumulative_distance().eval(
-        desc="Computing cumulative distance", max_workers=4
-    )
+    
+    print(traffic.data.isna().sum().sum())
+    print(' ')
     flights = [
         f.chart()
         .encode(
             x=alt.X(
-                "cumdist" if distance else "timedelta",
-                title="Distance from runway (Nm)",
+                x_col,
+                title="Time elapsed (s)"
+                if x_col == 'timedelta'   
+                else str(x_col),
+                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else None
             ),
             y=alt.Y(
-                "altitude",
+                y_col,
                 title=None,
                 scale=alt.Scale(domain=(0, 20000), clamp=True),
             ),
@@ -814,23 +816,27 @@ def vertical_rate_profile_2(
         for f in traffic
     ]
 
-    flights.append(
-        mean_flight.chart()
-        .encode(
-            x=alt.X(
-                "cumdist" if distance else "timedelta",
-                title="Distance from runway (Nm)",
-            ),
-            y=alt.Y(
-                "altitude",
-                title="Mean profile",
-                scale=alt.Scale(domain=(0, 20000), clamp=True),
-            ),
-            color=alt.value("red"),
-            opacity=alt.value(1),
+    if x_col == "timedelta":
+        flights.append(
+            mean_flight.chart()
+            .encode(
+                x=alt.X(
+                    x_col,
+                    title="Time elapsed (s)"
+                    if x_col == 'timedelta'   
+                    else str(x_col),
+                    
+                ),
+                y=alt.Y(
+                    y_col,
+                    title=None,
+                    scale=alt.Scale(domain=(0, 20000), clamp=True),
+                ),
+                color=alt.value("red"),
+                opacity=alt.value(1),
+            )
+            .transform_filter("datum.altitude < 20000")
         )
-        .transform_filter("datum.altitude < 20000")
-    )
 
     chart = alt.layer(*flights).properties(
         title="Departure altitude (in ft)", width=500, height=170

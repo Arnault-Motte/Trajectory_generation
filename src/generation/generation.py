@@ -88,7 +88,7 @@ class Generator:
         batch_size: int = 500,
         lat_long: bool = True,
     ) -> list[Traffic]:
-        model = self.model
+        model: CVAE_TCN_Vamp = self.model
         model.eval()
         traff_list = []
         with torch.no_grad():
@@ -159,3 +159,36 @@ class ONNX_Generator:
                 pbar.update(1)
 
         return traf
+    
+    def generate_n_flight_per_labels(
+        self,
+        labels: list[str],
+        n_points: int,
+        batch_size: int = 500,
+        lat_long: bool = True,
+    ) -> list[Traffic]:
+        model = self.model
+        traff_list = []
+        with torch.no_grad():
+            for label in tqdm(labels, desc="Generation"):
+                with tqdm(total=3, desc=f"Processing {label}") as pbar:
+                    labels_array = np.full(batch_size, label).reshape(-1, 1)
+                    transformed_label = self.data_clean.one_hot.transform(
+                        labels_array
+                    )
+
+                    pbar.update(1)
+
+                    # print("|--Sampling--|")
+                    labels_final = torch.Tensor(transformed_label)
+                    sampled = model.sample(n_points, batch_size, labels_final)
+                    pbar.update(1)
+
+                    traf = self.data_clean.output_converter(
+                        sampled, landing=True, lat_lon=lat_long
+                    )
+
+                    pbar.update(1)
+                    traff_list.append(traf)
+
+        return traff_list

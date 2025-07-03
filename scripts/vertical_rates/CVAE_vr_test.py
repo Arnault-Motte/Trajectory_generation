@@ -183,7 +183,6 @@ def main() -> None:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
-        condition_pseudo_inputs=bool(args.cond_pseudo),
     ).to(device)
 
     model.load_model(args.weights)
@@ -192,7 +191,7 @@ def main() -> None:
 
     # max_num_labels = 10
     # labels = data_cleaner.get_typecodes_labels()[:max_num_labels]
-    labels = ['B738', 'A321', 'A21N', 'A333']
+    labels = ['B738', 'A321', 'A21N', 'A333','A320']
     max_num_labels = len(labels)
     outputs_tensors = []
     for label in tqdm(labels,desc = 'generating for each label'):

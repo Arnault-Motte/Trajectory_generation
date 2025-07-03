@@ -1,0 +1,2 @@
+# uv run data_orly/scripts/A_script_paper/alt_profiles.py --x_col "CAS" --onnx_dir "test_ONNX" --plot_path "data_orly/figures/paper/altitude_profiles/gen_profiles_speed.png" --typecodes B738 A320 A321 
+uv run data_orly/scripts/A_script_paper/alt_profiles.py --x_col "CAS" --data "/data/data/arnault/data/final_data/TO_LFPO_test_final.pkl" --plot_path "data_orly/figures/paper/altitude_profiles/data_profiles_speed.png" --typecodes B738 A320 A321

@@ -352,7 +352,7 @@ class VAE_TCN_Vamp(nn.Module):
             kl_div += kl.mean().item()
         return total_loss, kl_div, total_mse
     
-    def compute_loss(self,data:torch.Tensor):
+    def compute_loss(self,data:torch.Tensor,label:torch.Tensor):
             x_batch = data.to(next(self.parameters()).device)
             x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
                 x_batch

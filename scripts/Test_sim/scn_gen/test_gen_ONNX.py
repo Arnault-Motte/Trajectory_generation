@@ -106,7 +106,7 @@ def main() -> None:
     #     airplane_types_num=10 if len(args.typecodes) ==0 else -1,
     # )
     data_cleaner = Data_cleaner(no_data=True, columns=columns)
-    data_cleaner.load_scalers(args.data.split(".")[0] + "scalers.pkl")
+    data_cleaner.load_scalers(args.weight_file.split(".")[0] + "_scalers.pkl")
     # print(data_cleaner.chosen_types)
     # data = data_cleaner.clean_data()
     print("start")
@@ -128,6 +128,7 @@ def main() -> None:
     labels_latent = 16
     # labels = data_cleaner.return_labels()
     # labels_dim = labels.shape[1]
+    # print("l ",labels_dim)
     labels_dim = 10
     # print(labels.shape)
     if not conditional:
@@ -178,9 +179,33 @@ def main() -> None:
 
     print("model_saved")
 
-    data_cleaner.save_scalers(args.data.split(".")[0] + "scalers.pkl")
+    data_cleaner.save_scalers(args.weight_file.split(".")[0] + "_scalers.pkl")
 
-    # gen = Generator(model, data_cleaner)
+    t_test = Traffic.from_file("/data/data/arnault/data/final_data/TO_LFPO_test_final.pkl")
+    t_test = t_test.aircraft_data()
+    t_test = t_test.query("typecode in ['B738', 'A320', 'A321', 'A319', 'A20N', 'A318', 'A21N', 'A359', 'E145', 'A333']")
+    t_test= t_test.sample(1000)
+    data_test = data_cleaner.clean_data_specific(t_test,False)
+    l_test = return_labels(t_test,data_cleaner.one_hot) 
+
+    data2 = torch.tensor(data_test, dtype=torch.float32)
+    labels_tensor = torch.tensor(l_test, dtype=torch.float32) 
+    print("comp loss")
+    with torch.no_grad():
+        model.eval()
+        model_loss = model.compute_loss(data2,labels_tensor)
+    print("loss: ",model_loss[0],"kl: ",model_loss[1],"recon ", model_loss[2])
+
+    gen = Generator(model, data_cleaner)
+
+    pseudo_in = model.get_pseudo_inputs_recons()
+    traf = data_cleaner.output_converter(
+                    pseudo_in, landing=True, lat_lon=True
+    )
+
+
+
+    plot_traffic(traf,"test_ONNX/pseudo_inputs_new_b_model.png")
     # chosen_label = args.typecode_to_gen
     # print(chosen_label)
     # # t = (
@@ -221,24 +246,30 @@ def main() -> None:
     # tensor_reprod = cvae_onnx.reproduce_data(traj_recons_a,labels,500,1)[0]
     # traf_recons=data_cleaner.output_converter(tensor_reprod, landing=True, lat_lon=True)
 
-    # plot_traffic(traf_recons,plot_path="test_ONNX/traffic_new_recons.png")
-    # plot_traffic(traj_recons,plot_path="test_ONNX/traffic_to_recons.png")
+    # plot_traffic(traf_recons,plot_path="test_ONNX/traffic_new_recons_A320.png")
+    # plot_traffic(traj_recons,plot_path="test_ONNX/traffic_to_recons_A320.png")
 
     onnx_gen = ONNX_Generator(cvae_onnx,data_cleaner)
 
+
+    
     
 
 
     import matplotlib.pyplot as plt
     from cartes.crs import Lambert93, PlateCarree
-    # from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
-    # import numpy as np
+    from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+    import numpy as np
     
-    # def turn_labels_tensor(list_labels:list,one_hot:OneHotEncoder)-> torch.Tensor:
-    #     np_label = np.array(list_labels).reshape(-1,1)
-    #     np_label   = one_hot.transform(np_label)
-    #     tensor_label = torch.Tensor(np_label)
-    #     return tensor_label
+    def turn_labels_tensor(list_labels:list,one_hot:OneHotEncoder)-> torch.Tensor:
+        np_label = np.array(list_labels).reshape(-1,1)
+        np_label   = one_hot.transform(np_label)
+        tensor_label = torch.Tensor(np_label)
+        return tensor_label
+
+    p_w:torch.Tensor = model.prior_weights_layers.forward(turn_labels_tensor(['A320'],data_cleaner.one_hot).to(next(model.parameters()).device))
+    print(p_w.tolist())
+    print("list^")
     
     # label = turn_labels_tensor(['B738'], one_hot= data_cleaner.one_hot)
     # weights = cvae_onnx.get_prior_weight(label).flatten()
@@ -263,23 +294,51 @@ def main() -> None:
     
     #test with 112
 
-    with plt.style.context("traffic"):
-        fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
-        traff_vamp_112b = onnx_gen.generate_flight_for_label_vamp('B738',112,100)
-        traff_vamp_112b.plot(ax, alpha=0.2, color="blue")
-        plt.savefig("test_ONNX/vamp112_B738.png", dpi=3000)
-        plt.show()
+    # with plt.style.context("traffic"):
+    #     fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
+    #     traff_vamp_112b = onnx_gen.generate_flight_for_label_vamp('B738',112,100)
+    #     traff_vamp_112b.plot(ax, alpha=0.2, color="blue")
+    #     plt.savefig("test_ONNX/vamp112_B738.png", dpi=3000)
+    #     plt.show()
 
-    vertical_rate_profile_2(traff_vamp_112b,"test_ONNX/vamp112_B738_distance.png",distance=False)
+    # vertical_rate_profile_2(traff_vamp_112b,"test_ONNX/vamp112_B738_distance.png",distance=False)
 
     
-    with plt.style.context("traffic"):
-        fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
-        traff_vamp_112a = onnx_gen.generate_flight_for_label_vamp('A320',112,100)
-        traff_vamp_112a.plot(ax, alpha=0.2, color="blue")
-        vertical_rate_profile_2(traff_vamp_112a,"test_ONNX/vamp112_A320_distance.png",distance=False)
-        plt.savefig("test_ONNX/vamp112_A320.png", dpi=3000)
-        plt.show()
+    # with plt.style.context("traffic"):
+    #     fig, ax = plt.subplots(subplot_kw=dict(projection=Lambert93()))
+    #     traff_vamp_112a = onnx_gen.generate_flight_for_label_vamp('A320',112,100)
+    #     traff_vamp_112a.plot(ax, alpha=0.2, color="blue")
+    #     vertical_rate_profile_2(traff_vamp_112a,"test_ONNX/vamp112_A320_distance.png",distance=False)
+    #     plt.savefig("test_ONNX/vamp112_A320.png", dpi=3000)
+    #     plt.show()
+    
+    traffs = onnx_gen.generate_n_flight_per_labels(["A320","A321","B738"],1000)
+    other_f = gen.generate_n_flight_per_labels(labels=["B738"], n_points=500)
+    plot_traffic(other_f[0],plot_path="test_ONNX/traffic_new_b_gen_B738.png")
+
+    # vertical_rate_profile_2(traffs[0],"test_ONNX/A320_TO_profile.png",distance=False)
+    # vertical_rate_profile_2(traffs[2],"test_ONNX/B738_TO_profile.png",distance=False)
+    # vertical_rate_profile_2(traffs[1],"test_ONNX/A321_TO_profile.png",distance=False)
+
+    # plot_traffic(traffs[2],plot_path="test_ONNX/traffic_new_gen_B738.png")
+    # plot_traffic(traffs[0],plot_path="test_ONNX/traffic_new_gen_A320.png")
+    # plot_traffic(traffs[1],plot_path="test_ONNX/traffic_new_gen_A321.png")
+
+    #og data 
+
+    data_t = Traffic.from_file(args.data)
+    if 'typecode' not in data_t.data.columns:
+        data_t = data_t.aircraft_data()
+
+
+    vertical_rate_profile_2(data_t.query('typecode == "A320"').sample(1000),"test_ONNX/A320_TO_profile_data_t.png",distance=False)
+    vertical_rate_profile_2(data_t.query('typecode == "B738"').sample(1000),"test_ONNX/B738_TO_profile.png",distance=False)
+    vertical_rate_profile_2(data_t.query('typecode == "B738"').sample(1000),"test_ONNX/A321_TO_profile.png",distance=False)
+
+
+
+
+    
 
     
     

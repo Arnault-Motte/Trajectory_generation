@@ -1,0 +1,2 @@
+uv run data_orly/scripts/A_script_paper/plot_vertical_rate.py --onnx_dir "test_ONNX" --plot_path "data_orly/figures/paper/vertical_rate/v_rate_gen.png" --typecodes B738 A320 A321 
+uuv run data_orly/scripts/A_script_paper/plot_vertical_rate.py --data "/data/data/arnault/data/final_data/TO_LFPO_test_final.pkl" --plot_path "data_orly/figures/paper/vertical_rate/v_rate_gen.png" --typecodes B738 A320 A321 

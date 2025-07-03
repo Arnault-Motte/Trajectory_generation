@@ -20,6 +20,7 @@ from data_orly.src.generation.data_process import (
     return_traff_per_typecode,
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
 from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
 from traffic.core import Traffic
 
@@ -229,7 +230,7 @@ def main() -> int:
     labels = data_cleaner.return_labels()
     labels_dim = labels.shape[1]
 
-    model = CVAE_TCN_Vamp(
+    model = CVAE_TCN_Vamp_old(
         in_channels,
         output_channels,
         latent_dim,
@@ -252,7 +253,6 @@ def main() -> int:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
-        pseudo_labels=True,
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))

@@ -552,12 +552,10 @@ class CVAE_ONNX:
         samples = []
         for _ in range(0, num_samples, batch_size):
             cur_batch = min(batch_size, num_samples - len(samples))
-            print(label.shape)
-            print(label[0].shape)
+
             self.encoder_sess.get_inputs()[0].shape
             z= self.sample_from_conditioned_prior(cur_batch, label[0].unsqueeze(0))
-            print(label[0])
-            print(label[0].shape)
+
             x_gen = self.decode(z, label)
             samples.append(x_gen)
         return torch.cat(samples).permute(0, 2, 1)
