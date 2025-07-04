@@ -1,0 +1,1 @@
+uv run data_orly/scripts/A_script_paper/mean_profile.py --onnx_dir "data_orly/models_paper/CVAE_minority" --data /data/data/arnault/data/final_data/TO_LFPO_test_final.pkl --plot_path data_orly/figures/paper/compare_profile/profile_end/mean_profile_no_filter_centroid.png --typecodes B738 

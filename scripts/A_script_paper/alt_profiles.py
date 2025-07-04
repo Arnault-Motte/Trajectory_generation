@@ -24,6 +24,7 @@ from data_orly.src.generation.test_display import (
 )
 from data_orly.src.simulation import Simulator
 from traffic.core import Traffic
+from data_orly.src.generation.data_process import compute_vertical_rate
 
 
 def main() -> None:
@@ -65,7 +66,8 @@ def main() -> None:
     args = parser.parse_args()
 
     print(args.typecodes)
-
+    from traffic.algorithms.filters.kalman import KalmanFilter6D
+    from cartes.crs import EuroPP
     if args.data == "":
         data_cleaner = Data_cleaner(
             no_data=True
@@ -76,23 +78,32 @@ def main() -> None:
             cvae_onnx, data_cleaner
         )  # used to gen from the CVAE
 
-        traffs = onnx_gen.generate_n_flight_per_labels(args.typecodes, 10,batch_size=1)
-
+        traffs = onnx_gen.generate_n_flight_per_labels(args.typecodes, 100,batch_size=100)
+       
         for i, typecode in tqdm(enumerate(args.typecodes)):
             gen_data = traffs[i]
+            gen_data = compute_vertical_rate(gen_data)
+            gen_data = gen_data.compute_xy(EuroPP()).filter(KalmanFilter6D()).eval()
+            print(gen_data.data["timedelta"])
             vertical_rate_profile_2(
                 gen_data,
                 args.plot_path.split(".")[0] + f"_{typecode}.png",
                 x_col=args.x_col,
             )
     elif args.onnx_dir == "":
+
         traff = Traffic.from_file(args.data)
         if "typecode" not in traff.data.columns:
             traff = traff.aircraft_data()
+
         for i, typecode in tqdm(enumerate(args.typecodes)):
             data_hist = traff.query(f'typecode == "{typecode}"').sample(
-                min(10, len(traff))
+                min(1000, len(traff))
             )
+            print(data_hist.data["timedelta"])
+ 
+            data_hist = data_hist.compute_xy(EuroPP()).filter(KalmanFilter6D()).eval()
+
             vertical_rate_profile_2(
                 data_hist,
                 args.plot_path.split(".")[0] + f"_{typecode}.png",

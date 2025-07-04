@@ -95,6 +95,13 @@ def main() -> None:
         help="pseudo inputs num",
     )
 
+    parser.add_argument(
+        "--scaler",
+        type=int,
+        default=0,
+        help="equal to 1 if you want to use the already save scalers",
+    )
+
     args = parser.parse_args()
 
     device = torch.device(
@@ -106,16 +113,19 @@ def main() -> None:
 
     columns = ["track", "groundspeed", "timedelta"]
     columns += ["vertical_rate"] if args.vertical_rate else ["altitude"]
-    data_cleaner = Data_cleaner(
-        args.data,
-        columns=columns,
-        chosen_typecodes=args.typecodes,
-        airplane_types_num=10 if len(args.typecodes) ==0 else -1,
-    )
-    # data_cleaner = Data_cleaner(no_data=True, columns=columns)
-    # data_cleaner.load_scalers(args.weight_file.split(".")[0] + "_scalers.pkl")
-    print(data_cleaner.chosen_types)
-    data = data_cleaner.clean_data()
+    if not args.scaler:
+        data_cleaner = Data_cleaner(
+            args.data,
+            columns=columns,
+            chosen_typecodes=args.typecodes,
+            airplane_types_num=10 if len(args.typecodes) ==0 else -1,
+        )
+        print(data_cleaner.chosen_types)
+        data = data_cleaner.clean_data()
+    else:
+        data_cleaner = Data_cleaner(no_data=True, columns=columns)
+        data_cleaner.load_scalers(args.weight_file.split(".")[0] + "_scalers.pkl")
+
     print("start")
 
     seq_len = 200
@@ -133,7 +143,8 @@ def main() -> None:
     patience = 30
     min_delta = -100
     labels_latent = 16
-    labels = data_cleaner.return_labels()
+    if not args.scaler:
+        labels = data_cleaner.return_labels() 
     # labels_dim = labels.shape[1]
     # print("l ",labels_dim)
     labels_dim = 10

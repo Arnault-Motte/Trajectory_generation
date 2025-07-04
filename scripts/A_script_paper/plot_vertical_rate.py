@@ -77,8 +77,19 @@ def main() -> None:
             args.typecodes[i // (2000 * 200)]
             for i in range(2000 * len(args.typecodes) * 200)
         ]
+        icao24 = [
+            i //  200
+            for i in range(2000 * len(args.typecodes) * 200)
+        ]
+
+        callsign = icao24
+        
         f_traf: Traffic = sum(traffs)
         f_traf = f_traf.assign(typecode=tc)
+        f_traf = f_traf.assign(icao24=icao24)
+        f_traf = f_traf.assign(callsign=callsign)
+        f_traf = f_traf.assign_id().eval(desc="assigning ids", max_workers=4)
+        print("f_traff_len:",len(f_traf))
 
         plot_distribution_typecode(
             f_traf,

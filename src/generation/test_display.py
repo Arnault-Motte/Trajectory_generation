@@ -759,7 +759,7 @@ def vertical_rate_profile_2(
     """
     
     traffic = Traffic(traffic.data[[x_col if x_col!="CAS" else 'groundspeed',y_col,"callsign","icao24",'timestamp']])
-    # traffic = traffic.resample("2s").eval(desc="")
+    traffic = traffic.resample("2s").eval(desc="")
 
     if x_col == "CAS":
         cas = aero.tas2cas(traffic.data["groundspeed"], h= traffic.data["altitude"])
@@ -816,7 +816,7 @@ def vertical_rate_profile_2(
                 title="Time elapsed (s)"
                 if x_col == 'timedelta'
                 else str(x_col),
-                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else None
+                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else alt.Scale(domain=(0, 1200), clamp=True)
             ),
             y=alt.Y(
                 y_col,
@@ -839,7 +839,7 @@ def vertical_rate_profile_2(
                 title="Time elapsed (s)"
                 if x_col == 'timedelta'
                 else str(x_col),
-                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else None
+                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else alt.Scale(domain=(0, 1200), clamp=True)
             ),
                 y=alt.Y(
                     y_col,

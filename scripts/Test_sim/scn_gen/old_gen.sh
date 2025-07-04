@@ -1,0 +1,1 @@
+uv run data_orly/scripts/Test_sim/scn_gen/old_gen.py --data /data/data/arnault/data/final_data/LFPO_all_A320_010_3.pkl  --weight_file data_orly/src/generation/models/saved_weights/full/CVAE_full_A320_010_3.pth --plot_path data_orly/figures/paper/traffic/traffic_new_model/traffic_pytorch.png  --cond 1  --l_dim 64 --pseudo_in 1000 --cuda 1 --typecode B738

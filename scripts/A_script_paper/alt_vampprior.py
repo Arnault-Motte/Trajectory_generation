@@ -86,18 +86,18 @@ def main() -> None:
 
         for i, typecode in tqdm(enumerate(args.typecodes)):
 
-            gen_data = onnx_gen.generate_flight_for_label_vamp(typecode,vamp=args.vamp,100,n_points=100,batch_size=100)
+            gen_data = onnx_gen.generate_flight_for_label_vamp(typecode,vamp=args.vamp,n_points=100,batch_size=100)
             vertical_rate_profile_2(
                 gen_data,
-                args.plot_path.split(".")[0] + f"time_{typecode}_{args.vamp}.png",
+                args.plot_path.split(".")[0] + f"_time_{typecode}_{args.vamp}.png",
                 x_col="timedelta",
             )
             vertical_rate_profile_2(
                 gen_data,
-                args.plot_path.split(".")[0] + f"speed_{typecode}_{args.vamp}.png",
+                args.plot_path.split(".")[0] + f"_speed_{typecode}_{args.vamp}.png",
                 x_col="CAS",
             )
-            plot_traffic(gen_data,plot_path=args.plot_path.split(".")[0] + f"time_{typecode}_{args.vamp}.png")
+            plot_traffic(gen_data,plot_path=args.plot_path.split(".")[0] + f"_traffic_time_{typecode}_{args.vamp}.png")
     elif args.onnx_dir == "":
         pass
     else:

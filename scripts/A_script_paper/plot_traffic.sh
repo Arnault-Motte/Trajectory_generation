@@ -1,0 +1,1 @@
+uv run data_orly/scripts/A_script_paper/plot_traffic.py --onnx_dir data_orly/models_paper/CVAE_minority --plot_path data_orly/figures/paper/traffic/traff_new_A320.png --typecodes A320
