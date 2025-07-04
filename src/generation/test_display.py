@@ -1,3 +1,4 @@
+import altair as alt
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -7,13 +8,13 @@ from cartes.atlas import france
 from cartes.crs import Lambert93, PlateCarree
 from cartes.osm import Nominatim
 from matplotlib import pyplot as plt
+from pitot import aero
 from sklearn.decomposition import PCA
 from torch.distributions import Independent, Normal
 from tqdm import tqdm
-import altair as alt
-import pandas as pd
 
 import numpy as np
+import pandas as pd
 from data_orly.src.generation.data_process import (
     Data_cleaner,
     compute_vertical_rate,
@@ -28,7 +29,6 @@ from data_orly.src.generation.models.VAE_TCN_VampPrior import (
     get_data_loader,
 )
 from traffic.core import Flight, Traffic
-from pitot import aero
 
 
 ###TEST for seeing the reconstruction of the autoencoder
@@ -751,7 +751,6 @@ def vertical_rate_profile(
 def vertical_rate_profile_2(
     traffic: Traffic,
     path: str,
-    distance: bool = True,
     y_col: str = "altitude",
     x_col: str = "timedelta",
 ) -> None:
@@ -761,15 +760,16 @@ def vertical_rate_profile_2(
     
     traffic = Traffic(traffic.data[[x_col if x_col!="CAS" else 'groundspeed',y_col,"callsign","icao24",'timestamp']])
     # traffic = traffic.resample("2s").eval(desc="")
-    alts = []
 
     if x_col == "CAS":
         cas = aero.tas2cas(traffic.data["groundspeed"], h= traffic.data["altitude"])
         traffic = traffic.assign(CAS = cas)
 
-
+    alts = []
+    x_list= []
     for flight in traffic:
         alts.append(flight.data[y_col].to_list())
+        x_list.append(flight.data[x_col].to_list())
 
 
     mean_flight = pd.DataFrame()
@@ -789,6 +789,20 @@ def vertical_rate_profile_2(
         axis=0,
     )
     mean_flight["timedelta"] = [2*i for i in range(max_len)]
+    if x_col != "timedelta":
+        mean_flight[x_col] = np.nanmean(
+        np.array(
+            [
+                np.pad(
+                    np.array(arr),
+                    (0, max_len - len(arr)),
+                    constant_values=np.nan,
+                )
+                for arr in x_list
+            ]
+        ),
+        axis=0,
+    )
     mean_flight = Flight(mean_flight)
 
     
@@ -800,7 +814,7 @@ def vertical_rate_profile_2(
             x=alt.X(
                 x_col,
                 title="Time elapsed (s)"
-                if x_col == 'timedelta'   
+                if x_col == 'timedelta'
                 else str(x_col),
                 scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else None
             ),
@@ -816,17 +830,17 @@ def vertical_rate_profile_2(
         for f in traffic
     ]
 
-    if x_col == "timedelta":
-        flights.append(
+    # if x_col == "timedelta":
+    flights.append(
             mean_flight.chart()
             .encode(
                 x=alt.X(
-                    x_col,
-                    title="Time elapsed (s)"
-                    if x_col == 'timedelta'   
-                    else str(x_col),
-                    
-                ),
+                x_col,
+                title="Time elapsed (s)"
+                if x_col == 'timedelta'
+                else str(x_col),
+                scale=alt.Scale(domain=(100, 600), clamp=True) if x_col == 'CAS' else None
+            ),
                 y=alt.Y(
                     y_col,
                     title=None,

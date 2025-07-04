@@ -15,8 +15,8 @@ import torch
 
 from data_orly.src.generation.data_process import Data_cleaner, return_labels
 from data_orly.src.generation.generation import Generator, ONNX_Generator
-from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
 from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
 from data_orly.src.generation.test_display import (
     plot_traffic,
@@ -62,6 +62,13 @@ def main() -> None:
         help="Which columns you wish as x_col",
     )
 
+    parser.add_argument(
+        "--vamp",
+        type=int,
+        default=0,
+        help="The number of the vamprior to generate for",
+    )
+
     args = parser.parse_args()
 
     print(args.typecodes)
@@ -76,28 +83,23 @@ def main() -> None:
             cvae_onnx, data_cleaner
         )  # used to gen from the CVAE
 
-        traffs = onnx_gen.generate_n_flight_per_labels(args.typecodes, 10,batch_size=1)
 
         for i, typecode in tqdm(enumerate(args.typecodes)):
-            gen_data = traffs[i]
+
+            gen_data = onnx_gen.generate_flight_for_label_vamp(typecode,vamp=args.vamp,100,n_points=100,batch_size=100)
             vertical_rate_profile_2(
                 gen_data,
-                args.plot_path.split(".")[0] + f"_{typecode}.png",
-                x_col=args.x_col,
-            )
-    elif args.onnx_dir == "":
-        traff = Traffic.from_file(args.data)
-        if "typecode" not in traff.data.columns:
-            traff = traff.aircraft_data()
-        for i, typecode in tqdm(enumerate(args.typecodes)):
-            data_hist = traff.query(f'typecode == "{typecode}"').sample(
-                min(10, len(traff))
+                args.plot_path.split(".")[0] + f"time_{typecode}_{args.vamp}.png",
+                x_col="timedelta",
             )
             vertical_rate_profile_2(
-                data_hist,
-                args.plot_path.split(".")[0] + f"_{typecode}.png",
-                x_col=args.x_col,
+                gen_data,
+                args.plot_path.split(".")[0] + f"speed_{typecode}_{args.vamp}.png",
+                x_col="CAS",
             )
+            plot_traffic(gen_data,plot_path=args.plot_path.split(".")[0] + f"time_{typecode}_{args.vamp}.png")
+    elif args.onnx_dir == "":
+        pass
     else:
         raise ValueError(
             "Choose between generation and using historical data, you can't do both"
