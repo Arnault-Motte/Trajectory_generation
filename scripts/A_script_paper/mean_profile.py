@@ -45,14 +45,22 @@ def max_alt_diff(traff: Traffic) -> float:
 
 
 def max_alt_diff_per_traff(traff: Traffic) -> float:
-    return [flight.data["altitude"].diff().max() for flight in traff]
+    return [
+        flight.data[flight.data["altitude"] < 20000]["altitude"]
+        .diff()
+        .abs()
+        .max()
+        for flight in traff
+    ]
 
 
 def return_centroid(traff: Traffic) -> int:
     ids = [f.flight_id for f in traff]
-
     raw_features = [
-        f.data[["CAS", "altitude"]].astype(float).values for f in traff
+        f.data[f.data["altitude"] < 20000][["CAS", "altitude"]]
+        .astype(float)
+        .values
+        for f in traff
     ]
 
     min_len = min(arr.shape[0] for arr in raw_features)
@@ -109,7 +117,7 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
     max_diff_alt = max_alt_diff_per_traff(traffic)
     print(
         "number of fucked traff: ",
-        len([elem for elem in max_diff_alt if elem > 1000]),
+        len([elem for elem in max_diff_alt if elem > 2000]),
     )
 
     traffic = traffic.drop(columns=["timedelta"])
@@ -128,6 +136,10 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
     print("max: ", min(len(f) for f in t_temp))
     print("min length traff: ", min_f_len)
     id_centroid = return_centroid(t_temp)
+    print(
+        "flight speed over 300: ",
+        len([1 for f in traffic if (f.data["CAS"] > 300).any()]),
+    )
 
     # removing flights with impossible altitudes (habborant )
     print(
@@ -136,12 +148,15 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
         f" {traffic[0].typecode}",
     )
 
-    def f_good(f: Flight, threshold: int = 2000) -> Flight:
-        if (f.data["altitude"] < 1500).any() == 0:
+    def f_good(f: Flight, threshold: int = 1500) -> Flight:
+        if (f.data["altitude"] < threshold).any() == 0:  # and (
+            #     f.data[f.data["altitude"] < 20000]["altitude"].diff().max() < 2000
+            # ):
             return f
         return None
 
     traffic = traffic.pipe(f_good).eval(desc="removing outliers")
+    id_centroid = return_centroid(t_temp)
 
     alts = []
     x_list = []
@@ -154,52 +169,79 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
     mean_profile = pd.DataFrame()
 
     max_len = max(len(arr) for arr in alts)
+
+    array_alts = np.array(
+        [
+            np.pad(
+                np.array(arr),
+                (0, max_len - len(arr)),
+                constant_values=np.nan,
+            )
+            for arr in alts
+        ]
+    )
+
+    nan_counts = np.isnan(array_alts).sum(axis=0)
+
+    print(nan_counts)
+
+    threshold = 100
+
+    mask = nan_counts <= len(traffic) - threshold  # we want to have at least threshold vals, before computing the mean
+
+    array_alts = array_alts[:, mask]
+
     mean_profile["altitude"] = np.nanmean(
-        np.array(
-            [
-                np.pad(
-                    np.array(arr),
-                    (0, max_len - len(arr)),
-                    constant_values=np.nan,
-                )
-                for arr in alts
-            ]
-        ),
+        array_alts,
         axis=0,
     )
-    # mean_profile["timedelta"] = [2*i for i in range(max_len)]
+
+    cas_array = np.array(
+        [
+            np.pad(
+                np.array(arr),
+                (0, max_len - len(arr)),
+                constant_values=np.nan,
+            )
+            for arr in x_list
+        ]
+    )
+
+    cas_array = cas_array[:, mask]
 
     mean_profile["CAS"] = np.nanmean(
-        np.array(
-            [
-                np.pad(
-                    np.array(arr),
-                    (0, max_len - len(arr)),
-                    constant_values=np.nan,
-                )
-                for arr in x_list
-            ]
-        ),
+        cas_array,
         axis=0,
+    )
+
+    vertical_rate = np.array(
+        [
+            np.pad(
+                np.array(arr),
+                (0, max_len - len(arr)),
+                constant_values=np.nan,
+            )
+            for arr in v_rates
+        ]
     )
 
     mean_profile["vertical_rate"] = np.nanmean(
-        np.array(
-            [
-                np.pad(
-                    np.array(arr),
-                    (0, max_len - len(arr)),
-                    constant_values=np.nan,
-                )
-                for arr in v_rates
-            ]
-        ),
+        vertical_rate[:, mask],
         axis=0,
     )
 
     mean_profile = mean_profile[mean_profile["altitude"] < 20000]
-    mean_profile = mean_profile[mean_profile["CAS"] < 500]
+    mean_profile = mean_profile[mean_profile["CAS"] < 300]
     mean_profile = mean_profile  # .dropna()
+    print(mean_profile["altitude"].diff().max())
+    print(mean_profile["altitude"].diff().tolist())
+    print(
+        traffic[id_centroid]
+        .data[traffic[id_centroid].data["altitude"] > 14900][
+            ["CAS", "altitude", "groundspeed"]
+        ]
+        .head(20)
+    )
     return mean_profile, traffic[id_centroid]
 
 
@@ -222,6 +264,7 @@ def mean_profile_per_typecodes(
         centroid_data = centroid.data[["altitude", "CAS", "vertical_rate"]]
         centroid_data["generated"] = label + "_centroid"
         centroid_data["typecode"] = typecode
+        centroid_data = centroid_data[centroid_data["altitude"] < 20000]
 
         mean_prof_total = pd.concat(
             [mean_prof_total, mean_prof, centroid_data], axis=0
@@ -288,7 +331,6 @@ def plot_mean_profile(mean_profile: pd.DataFrame, path: str) -> None:
             ),
         )
         .facet(row=alt.Row("typecode:N", title="Typecode"), columns=2)
-        .resolve_scale(x="independent", y="independent")
     )
 
     chart.save(path)
@@ -343,7 +385,7 @@ def main() -> None:
         generator=onnx_gen,
         traffic_og=traff,
         typecodes=args.typecodes,
-        n_flights=1000,
+        n_flights=2000,
     )
     mean_prof.to_parquet(args.plot_path.split(".")[0] + "_mean_profiles.pkl")
     mean_prof.to_csv(args.plot_path.split(".")[0] + "_mean_profiles.csv")

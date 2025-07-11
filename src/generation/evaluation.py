@@ -17,7 +17,7 @@ from data_orly.src.generation.data_process import (
     compute_vertical_rate,
     jason_shanon,
 )
-from data_orly.src.generation.generation import Generator
+from data_orly.src.generation.generation import Generator,ONNX_Generator
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
@@ -314,6 +314,65 @@ class Evaluator:
     def flight_navpoints_simulation(f: Flight) -> Flight:
         pass
 
+
+
+def compute_e_dist(
+        gen:ONNX_Generator,
+        traff:Traffic,
+        number_of_trial: int = 100,
+        n_t: int = 3000,
+        label: str = "",
+        scaler: MinMaxScaler = None,
+    ) -> float:
+        """
+        Computes the mean of the e_distance for n number of trials
+        """
+
+        cond = label != ""
+        # print("Conditioned : ", cond)
+
+        list_gen = []
+
+        for _ in tqdm(range(number_of_trial), desc="generating"):
+            generated = (
+                gen.generate_n_flight_per_labels(
+                    labels=[label],
+                    n_points=n_t,
+                    lat_long=False,
+                )[0]
+                .assign_id()
+                .eval()
+                if cond
+                else gen.generate_n_flight(n_t, lat_long=False)
+                .assign_id()
+                .eval()
+            )
+            list_gen.append(convert_traff_numpy(generated, scaler=scaler))
+
+        if cond:
+            traff = traff.query(f'typecode == "{label}"')
+
+        m = len(traff)
+
+        list_traff = [
+            convert_traff_numpy(
+                traff.sample(min(n_t, m)), scaler=scaler
+            )
+            for _ in range(number_of_trial)
+        ]
+
+        args_list = [(list_traff[i], list_gen[i]) for i in range(number_of_trial)]
+
+        with Pool(processes=10) as pool:
+            # e_distances = pool.map(self.e_dist_chunk, args_list)
+            e_distances = list(
+                tqdm(
+                    pool.imap(e_dist_chunk, args_list),
+                    total=len(args_list),
+                )
+            )
+
+        return sum(e_distances) / number_of_trial
 
 def e_dist_chunk(
     args: tuple[np.ndarray, np.ndarray, int, MinMaxScaler],

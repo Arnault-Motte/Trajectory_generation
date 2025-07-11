@@ -394,6 +394,7 @@ class CVAE_ONNX:
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
         print(f"Seq_len : {self.seq_len}")
+        self.log_std = torch.load(f"{onnx_dir}/log_std.pt")
 
         try:
             self.prior_weights_sess = ort.InferenceSession(
@@ -493,7 +494,6 @@ class CVAE_ONNX:
     def reproduce(self, x: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
         x_recon, *_ = self.forward(x, label)
         return x_recon.permute(0, 2, 1)
-    
 
     def reproduce_data(
         self,
@@ -508,12 +508,7 @@ class CVAE_ONNX:
         Also returns the data_loader used
         """
         data1, _ = get_data_loader(
-            data,
-            labels,
-            batch_size,
-            0.9,
-            shuffle=False,
-            num_worker=4
+            data, labels, batch_size, 0.9, shuffle=False, num_worker=4
         )
         i = 0
         batches_reconstructed = []
@@ -554,7 +549,9 @@ class CVAE_ONNX:
             cur_batch = min(batch_size, num_samples - len(samples))
 
             self.encoder_sess.get_inputs()[0].shape
-            z= self.sample_from_conditioned_prior(cur_batch, label[0].unsqueeze(0))
+            z = self.sample_from_conditioned_prior(
+                cur_batch, label[0].unsqueeze(0)
+            )
 
             x_gen = self.decode(z, label)
             samples.append(x_gen)
@@ -563,7 +560,9 @@ class CVAE_ONNX:
     def get_pseudo_inputs_recons(self) -> torch.Tensor:
         pseudo_labels = self.pseudo_labels_sess.run(None, {})[0]
         pseudo_inputs = self.pseudo_inputs_sess.run(None, {})[0]
-        pseudo_inputs_tensor: torch.Tensor = torch.tensor(pseudo_inputs).permute(0, 2, 1)
+        pseudo_inputs_tensor: torch.Tensor = torch.tensor(
+            pseudo_inputs
+        ).permute(0, 2, 1)
         pseudo_labels_tensor = torch.tensor(pseudo_labels)
         return self.reproduce(pseudo_inputs_tensor, pseudo_labels_tensor)
 
@@ -578,3 +577,45 @@ class CVAE_ONNX:
         labels = label.expand(num_traj, -1)
         x_gen = self.decode(samples, labels)
         return x_gen.permute(0, 2, 1)
+
+    def compute_loss(
+        self, data: torch.Tensor, labels: torch.Tensor
+    ) -> tuple[float, float, float]:
+        data = data
+        x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self.forward(
+            data, labels
+        )
+        # x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = (
+        #     x_recon.cpu(),
+        #     z.cpu(),
+        #     mu.cpu(),
+        #     log_var.cpu(),
+        #     pseudo_mu.cpu(),
+        #     pseudo_log_var.cpu(),
+        # )
+        prior_weights = self.get_prior_weight(labels)
+        loss = VAE_vamp_prior_loss(
+            data.permute(0, 2, 1),
+            x_recon,
+            z,
+            mu,
+            log_var,
+            pseudo_mu,
+            pseudo_log_var,
+            scale=self.log_std.cpu(),
+            vamp_weight=prior_weights,
+        )
+
+        kl = vamp_prior_kl_loss(
+            z,
+            mu,
+            log_var,
+            pseudo_mu,
+            pseudo_log_var,
+            vamp_weight=prior_weights,
+        )
+        mse = reconstruction_loss(data.permute(0, 2, 1), x_recon)
+        cur_size = data.size(0)
+        total_mse = mse.item() / cur_size
+        kl_div = kl.mean().item()
+        return loss.item(), kl_div, total_mse

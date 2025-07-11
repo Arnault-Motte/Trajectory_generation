@@ -1,4 +1,5 @@
 from collections import Counter
+import os
 import torch
 import torch.distributions as distrib
 import torch.nn as nn
@@ -509,6 +510,10 @@ class CVAE_TCN_Vamp_old(nn.Module):
         self.test_concat = test_concat
         self.test_concat_mask = test_concat_mask
         # -------------------------------------
+
+        self.latent_dim = latent_dim
+        self.label_dim = label_dim
+        self.label_latent = label_latent
 
         self.padding = padding
         self.complexe_w = complexe_weight
@@ -1518,3 +1523,74 @@ class CVAE_TCN_Vamp_old(nn.Module):
         self.eval()
         with torch.no_grad():
             return self.pseudo_labels_layer.forward()
+    
+    def save_model_ONNX(self, save_dir: str, opset_version: int = 17) -> None:
+        """
+        Exports each neural net of the CVAE into ONNX files.
+        The path where these neural nets are saved is save_dir.
+        The name of each submodule will define the name of each file.
+
+        Args:
+        save_dir (str): Path to the directory to save the ONNX files.
+        opset_version (int): ONNX opset version.
+        """
+        os.makedirs(save_dir, exist_ok=True)
+
+        torch.save(self.log_std,f"{save_dir}/log_std.pt")
+
+        dummy_inputs = {
+            "encoder": (
+                torch.randn(1, self.in_channels, self.seq_len).to(
+                    next(self.parameters()).device
+                ),
+                torch.randn(1, 1, self.seq_len).to(
+                    next(self.parameters()).device
+                ),
+            ),
+            "decoder": (
+                torch.randn(1, self.latent_dim).to(
+                    next(self.parameters()).device
+                ),
+                torch.randn(1, self.label_latent).to(
+                    next(self.parameters()).device
+                ),
+            ),
+            "pseudo_inputs_layer": (),
+            "pseudo_labels_layer": (),
+            "labels_encoder_broadcast": torch.randn(1, self.label_dim).to(
+                next(self.parameters()).device
+            ),
+            "labels_decoder_broadcast": torch.randn(1, self.label_dim).to(
+                next(self.parameters()).device
+            ),
+            "prior_weights_layers": torch.randn(1, self.label_dim).to(
+                next(self.parameters()).device
+            ),
+        }
+
+        for name, module in self.named_children():
+            if isinstance(module, nn.Module):
+                self.eval()
+                file_path = os.path.join(save_dir, f"{name}.onnx")
+                print(f"Exporting {name} to {file_path}")
+
+                inputs = dummy_inputs[name]
+
+                if not isinstance(inputs, tuple):
+                    inputs = (inputs,)  # wrap in tuple if needed
+
+                try:
+                    torch.onnx.export(
+                        module,
+                        inputs,
+                        file_path,
+                        input_names=[f"input_{i}" for i in range(len(inputs))],
+                        output_names=[f"output"],
+                        dynamic_axes={
+                            f"input_{i}": {0: "batch"}
+                            for i in range(len(inputs))
+                        },
+                        opset_version=opset_version,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Failed to export {name}: {e}")

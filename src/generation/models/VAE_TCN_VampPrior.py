@@ -11,6 +11,7 @@ from data_orly.src.core.early_stop import Early_stopping
 from data_orly.src.core.loss import *
 from data_orly.src.core.networks import *
 from traffic.core import tqdm
+import os
 
 
 ## Encoder
@@ -120,6 +121,7 @@ class VAE_TCN_Vamp(nn.Module):
     ):
         super(VAE_TCN_Vamp, self).__init__()
 
+        self.latent_dim = latent_dim
         self.temp_name = temp_name
         self.encoder = TCN_encoder(
             in_channels,
@@ -352,7 +354,7 @@ class VAE_TCN_Vamp(nn.Module):
             kl_div += kl.mean().item()
         return total_loss, kl_div, total_mse
     
-    def compute_loss(self,data:torch.Tensor,label:torch.Tensor):
+    def compute_loss(self,data:torch.Tensor):
             x_batch = data.to(next(self.parameters()).device)
             x_recon, z, mu, log_var, pseudo_mu, pseudo_log_var = self(
                 x_batch
@@ -462,3 +464,59 @@ class VAE_TCN_Vamp(nn.Module):
                 0, 2, 1
             )
         return output
+    
+    def save_model_ONNX(self, save_dir: str, opset_version: int = 17) -> None:
+        """
+        Exports each neural net of the CVAE into ONNX files.
+        The path where these neural nets are saved is save_dir.
+        The name of each submodule will define the name of each file.
+
+        Args:
+        save_dir (str): Path to the directory to save the ONNX files.
+        opset_version (int): ONNX opset version.
+        """
+        os.makedirs(save_dir, exist_ok=True)
+
+        torch.save(self.log_std,f"{save_dir}/log_std.pt")
+        torch.save(self.prior_weights,f"{save_dir}/prior_w.pt")
+
+        dummy_inputs = {
+            "encoder": (
+                torch.randn(1, self.in_channels, self.seq_len).to(
+                    next(self.parameters()).device
+                ),
+            ),
+            "decoder": (
+                torch.randn(1, self.latent_dim).to(
+                    next(self.parameters()).device
+                ),
+            ),
+            "pseudo_inputs_layer": (),
+        }
+
+        for name, module in self.named_children():
+            if isinstance(module, nn.Module):
+                self.eval()
+                file_path = os.path.join(save_dir, f"{name}.onnx")
+                print(f"Exporting {name} to {file_path}")
+
+                inputs = dummy_inputs[name]
+
+                if not isinstance(inputs, tuple):
+                    inputs = (inputs,)  # wrap in tuple if needed
+
+                try:
+                    torch.onnx.export(
+                        module,
+                        inputs,
+                        file_path,
+                        input_names=[f"input_{i}" for i in range(len(inputs))],
+                        output_names=[f"output"],
+                        dynamic_axes={
+                            f"input_{i}": {0: "batch"}
+                            for i in range(len(inputs))
+                        },
+                        opset_version=opset_version,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Failed to export {name}: {e}")

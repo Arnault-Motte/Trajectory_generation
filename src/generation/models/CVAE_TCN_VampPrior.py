@@ -1081,6 +1081,9 @@ class CVAE_TCN_Vamp(nn.Module):
         """
         os.makedirs(save_dir, exist_ok=True)
 
+        torch.save(self.log_std,f"{save_dir}/log_std.pt")
+        print("log std :", self.log_std)
+
         dummy_inputs = {
             "encoder": (
                 torch.randn(1, self.in_channels, self.seq_len).to(

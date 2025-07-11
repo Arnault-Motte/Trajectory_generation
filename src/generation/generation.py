@@ -16,6 +16,7 @@ from data_orly.src.generation.data_process import (
 )
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
+from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
 )
@@ -118,7 +119,7 @@ class Generator:
 
 
 class ONNX_Generator:
-    def __init__(self, model: CVAE_ONNX, data_clean: Data_cleaner) -> None:
+    def __init__(self, model: CVAE_ONNX|VAE_ONNX, data_clean: Data_cleaner) -> None:
         self.model = model
         self.data_clean = data_clean
         self.cond = model is not None
@@ -167,7 +168,7 @@ class ONNX_Generator:
         batch_size: int = 500,
         lat_long: bool = True,
     ) -> list[Traffic]:
-        model = self.model
+        model: CVAE_ONNX = self.model
         traff_list = []
         with torch.no_grad():
             for label in tqdm(labels, desc="Generation"):
@@ -192,3 +193,14 @@ class ONNX_Generator:
                     traff_list.append(traf)
 
         return traff_list
+    
+    def generate_n_flight(
+        self, n_points: int, batch_size: int = 500, lat_long: bool = True
+    ) -> Traffic:
+        model:VAE_ONNX = self.model
+        sampled = model.sample(num_samples=n_points, batch_size=batch_size)
+        # sampled = sampled.permute(0, 2, 1)
+        traf = self.data_clean.output_converter(
+            sampled, landing=True, lat_lon=lat_long
+        )
+        return traf

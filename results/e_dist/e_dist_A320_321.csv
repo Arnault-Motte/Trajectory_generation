@@ -1,0 +1,5 @@
+ Model_Path, Model_type, typecode, typecodes, e_dist 
+data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A321_200.pth, VAE_TCN_Vamp, , ['A321'], 0.061990703837259374
+data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A320.pth, VAE_TCN_Vamp, , ['A320'], 0.010965422654406148
+data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_A320_A321_200.pth, CVAE_TCN_Vamp, A320, ['A320', 'A321'], 0.021862286480164084
+data_orly/src/generation/models/saved_weights/limited_one_typecode/CVAE_both_A320_A321_200.pth, CVAE_TCN_Vamp, A321, ['A320', 'A321'], 0.27775807770918837
