@@ -187,5 +187,5 @@ def CVAE_vamp_prior_loss_label_weights(
     )
     # print("recon_loss shape", recon_loss.shape)
     # print("kl_loss shape", kl_loss.shape)
-    loss = weights * (recon_loss + beta * kl_loss)
+    loss = weights * recon_loss + beta * kl_loss
     return loss.mean()

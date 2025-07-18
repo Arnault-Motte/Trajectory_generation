@@ -320,8 +320,10 @@ class Pseudo_inputs_generator_conditioned(nn.Module):
         x = torch.eye(self.pseudo_inputs_num, self.pseudo_inputs_num).to(
             next(self.parameters()).device
         )
+
         x = torch.cat([x for _ in range(len(label))],dim = 0)
         # print(x.shape)
+   
         label = label.repeat_interleave(self.pseudo_inputs_num, dim=0)
         # print(label.shape)
         x = torch.cat((x,label),dim =1)

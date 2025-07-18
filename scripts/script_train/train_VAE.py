@@ -82,15 +82,15 @@ def main() -> int:
 
     print(f"chosen columns : {columns}")
 
-    if 0< args.sample <1.0:
+    if 0 < args.sample < 1.0:
         t = Traffic.from_file(args.data)
-        t = t.sample(int(len(t)*args.sample))
+        t = t.sample(int(len(t) * args.sample))
 
         if args.save_sample != "":
             t.to_pickle(args.save_sample)
 
         data_cleaner = Data_cleaner(
-            traff = t,
+            traff=t,
             columns=columns,
             chosen_typecodes=args.typecodes,
         )
@@ -145,6 +145,11 @@ def main() -> int:
     ## Training the model
     model.fit(data, epochs=1000, lr=1e-3, batch_size=500)
     model.save_model(args.weights)
+    path = "data_orly/models_paper/" + args.weights.split("/")[-1].split(".")[0]
+    model.save_model_ONNX(
+        path
+    )
+    data_cleaner.save_scalers(path +"/scalers.pkl")
     return 0
 
 

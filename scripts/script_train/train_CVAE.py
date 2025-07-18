@@ -2,6 +2,7 @@ import sys  # noqa: I001
 import os
 
 
+
 current_path = os.getcwd()
 sys.path.append(os.path.abspath(current_path))
 
@@ -10,7 +11,7 @@ print(os.path.dirname(__file__))
 
 
 import argparse
-
+import pickle
 import torch
 
 from data_orly.src.generation.data_process import (
@@ -116,6 +117,13 @@ def main() -> int:
         help="The batch size for training",
     )
 
+    praser.add_argument(
+        "--spec",
+        type=int,
+        default=0,
+        help="true if you want to use the model spec as label",
+    )
+
     praser.add_argument("--scale", type=float, default=1, help="inital scale")
 
     args = praser.parse_args()
@@ -193,19 +201,26 @@ def main() -> int:
     print("yo")
     print(len(combined_traff))
     print(combined_traff.data.columns)
-
+    
+    if args.spec == 1:
+        with open("/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", 'rb') as handle:
+            dic_spec = pickle.load(handle)
+    else:
+        dic_spec =None
 
     if len(args.typecodes) != 0:
         data_cleaner = Data_cleaner(
             traff=combined_traff,
             columns=columns,
             chosen_typecodes=args.typecodes,
+            aircraft_spec=dic_spec,
         )
     else :
         data_cleaner = Data_cleaner(
             traff=combined_traff,
             columns=columns,
             airplane_types_num=10, #limiting to the 10 most commun typecodes
+            aircraft_spec=dic_spec,
         )
 
 
@@ -253,14 +268,20 @@ def main() -> int:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
+        condition_pseudo_inputs=args.cond_pseudo
     ).to(device)
 
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=args.batch_size,step_size=100)
+    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=args.batch_size,step_size=20)
     model.save_model(args.weights)
     scalers_path = args.weights.split('.')[0] + "_scalers.pkl"
     data_cleaner.save_scalers(scalers_path)
+    path = "data_orly/models_paper/" + args.weights.split("/")[-1].split(".")[0]
+    model.save_model_ONNX(
+        path
+    )
+    data_cleaner.save_scalers(path +"/scalers.pkl")
     return 0
 
 

@@ -3,6 +3,8 @@ import os
 
 from tqdm import tqdm
 
+
+
 CURRENT_PATH = os.getcwd()
 sys.path.append(os.path.abspath(CURRENT_PATH))
 print("Current working directory:", CURRENT_PATH)
@@ -14,6 +16,7 @@ import argparse
 import torch
 
 from data_orly.src.generation.data_process import Data_cleaner,return_labels
+from data_orly.src.generation.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
 from data_orly.src.generation.generation import Generator,ONNX_Generator
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
@@ -101,6 +104,12 @@ def main() -> None:
         default=0,
         help="equal to 1 if you want to use the already save scalers",
     )
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="equal to 1 if the model used conditioned pseudo labels",
+    )
 
     args = parser.parse_args()
 
@@ -169,28 +178,56 @@ def main() -> None:
             init_std=1,
         ).to(device)
     else:
-        model = CVAE_TCN_Vamp(
-            in_channels,
-            output_channels,
-            latent_dim,
-            kernel_size,
-            stride,
-            dilatation,
-            dropout,
-            number_of_block,
-            pooling_factor,
-            pooling_factor,
-            label_dim=labels_dim,
-            label_latent=labels_latent,
-            seq_len=seq_len,
-            pseudo_input_num=pseudo_input_num,
-            early_stopping=True,
-            patience=patience,
-            min_delta=min_delta,
-            temp_save="best_model_1000.pth",
-            conditioned_prior=True,
-            num_worker=6,
-        ).to(device)
+        if not args.cond_pseudo:
+            model = CVAE_TCN_Vamp(
+                in_channels,
+                output_channels,
+                latent_dim,
+                kernel_size,
+                stride,
+                dilatation,
+                dropout,
+                number_of_block,
+                pooling_factor,
+                pooling_factor,
+                label_dim=labels_dim,
+                label_latent=labels_latent,
+                seq_len=seq_len,
+                pseudo_input_num=pseudo_input_num,
+                early_stopping=True,
+                patience=patience,
+                min_delta=min_delta,
+                temp_save="best_model_1000.pth",
+                conditioned_prior=True,
+                num_worker=6,
+            ).to(device)
+        else : 
+            model = CVAE_TCN_Vamp_old(
+                in_channels,
+                output_channels,
+                latent_dim,
+                kernel_size,
+                stride,
+                dilatation,
+                dropout,
+                number_of_block,
+                pooling_factor,
+                pooling_factor,
+                label_dim=labels_dim,
+                label_latent=labels_latent,
+                seq_len=seq_len,
+                pseudo_input_num=pseudo_input_num,
+                early_stopping=True,
+                patience=patience,
+                min_delta=min_delta,
+                temp_save=f"best_model{args.cuda}.pth",
+                conditioned_prior=True,
+                num_worker=6,
+                init_std=1,
+                condition_pseudo_inputs=args.cond_pseudo
+            ).to(device)
+
+    
 
     model.load_model(weight_file_path=args.weight_file)
     model.save_model_ONNX(args.save_dir)

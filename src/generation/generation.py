@@ -20,6 +20,7 @@ from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
 )
+from data_orly.src.generation.data_process import convert_labels
 from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
 from numpy._typing._array_like import NDArray
 from traffic.algorithms.generation import compute_latlon_from_trackgs
@@ -141,6 +142,7 @@ class ONNX_Generator:
 
         with tqdm(total=3, desc=f"Processing {label}") as pbar:
                 # print(label)
+
                 labels_array = np.array([label]).reshape(-1, 1)
                 transformed_label = self.data_clean.one_hot.transform(
                     labels_array
@@ -167,21 +169,23 @@ class ONNX_Generator:
         n_points: int,
         batch_size: int = 500,
         lat_long: bool = True,
+        spec:dict= None,
     ) -> list[Traffic]:
         model: CVAE_ONNX = self.model
         traff_list = []
         with torch.no_grad():
             for label in tqdm(labels, desc="Generation"):
                 with tqdm(total=3, desc=f"Processing {label}") as pbar:
-                    labels_array = np.full(batch_size, label).reshape(-1, 1)
-                    transformed_label = self.data_clean.one_hot.transform(
-                        labels_array
-                    )
+                    labels_array = convert_labels(np.full(batch_size, label),self.data_clean.one_hot,spec)
+                    # labels_array = np.full(batch_size, label).reshape(-1, 1)
+                    # transformed_label = self.data_clean.one_hot.transform(
+                    #     labels_array
+                    # )
 
                     pbar.update(1)
 
                     # print("|--Sampling--|")
-                    labels_final = torch.Tensor(transformed_label)
+                    labels_final = torch.Tensor(labels_array)
                     sampled = model.sample(n_points, batch_size, labels_final)
                     pbar.update(1)
 

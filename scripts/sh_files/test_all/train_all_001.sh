@@ -15,7 +15,10 @@ mkdir -p data_orly/src/generation/models/saved_weights/full
 
 
 # uv run python data_orly/scripts/script_train/train_CVAE.py --cond_pseudo 0 --data_save "/data/data/arnault/data/final_data/CVAE_full_A320_0005.pkl" --data /data/data/arnault/data/final_data/TO_LFPO_final.pkl  --weights data_orly/src/generation/models/saved_weights/full/CVAE_full_A320_0005.pth --typecodes B738 A320 A321 A319 A20N A318 A21N A359 E145 A333 --num_flights 1.0 0.005 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 --cuda 1 --scale 1 --balanced 0 --weights_data 0 --pseudo_in 1000 --l_dim 64
-uv run python data_orly/scripts/script_train/train_VAE.py --data "/data/data/arnault/data/final_data/CVAE_full_A320_0005.pkl" --weights data_orly/src/generation/models/saved_weights/full/VAE_A320_0005.pth --typecodes A320 --cuda 1 --scale 0.5 --l_dim 32 --pseudo_in 600 #--sample 0.1 --save_sample "data_orly/data/sampled_data/combined_data/full/VAE_A320_010.pkl" #10% of the A320 sampled
+# uv run python data_orly/scripts/script_train/train_VAE.py --data "/data/data/arnault/data/final_data/CVAE_full_A320_0005.pkl" --weights data_orly/src/generation/models/saved_weights/full/VAE_A320_0005.pth --typecodes A320 --cuda 1 --scale 0.5 --l_dim 32 --pseudo_in 600 #--sample 0.1 --save_sample "data_orly/data/sampled_data/combined_data/full/VAE_A320_010.pkl" #10% of the A320 sampled
+
+
+# uv run python data_orly/scripts/script_train/train_CVAE.py --cond_pseudo 1 --spec 0 --data_save "/data/data/arnault/data/final_data/CVAE_full_A320_low_cond.pkl" --data "/data/data/arnault/data/takeoffs_LFPO_07.pkl"  --weights data_orly/src/generation/models/saved_weights/full/CVAE_full_A320__low_cond.pth --typecodes B738 A320 A321 A319 A20N A318 A21N A359 E145 A333 --num_flights 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 --cuda 1 --scale 1 --balanced 0 --weights_data 0 --pseudo_in 1000 --l_dim 64 --batch_size 100
 
 # typecodes=('A320' 'B738' 'A321' 'A319' 'A20N' 'A21N')
 

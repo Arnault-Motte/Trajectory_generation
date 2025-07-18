@@ -283,43 +283,75 @@ def schedule(time: int, command: str) -> str:
     )
 
 
-def mean_alt_spd(f: Flight, nav_p: Flight) -> dict:
+def mean_alt_spd(f: Flight, nav_p: Flight) -> list:
     """
     Outputs the mean altitude and speed for every navpoint range
     """
 
     f_start = f.start
     t_first = f_start
-    dic = {}
+    # dic = {}
+    alt_speed_list = []
 
     np_d = nav_p.data
     new_nav = np_d[
         ~np_d["name"].eq(np_d["name"].shift())
     ]  # remove succesives duplicates
-    # print(new_nav)
+    print(f_start, " ", nav_p.data.iloc[0].start)
+    print(f_start, " ", nav_p.data)
     for _, n_p in new_nav.iterrows():
-
-        t_small = f.after(t_first).before(n_p.stop)
-
-        mean_speed = t_small.data["groundspeed"].mean()
-        mean_alt = t_small.data["altitude"].mean()
-        print(mean_speed,mean_alt)
-        dic[n_p.navaid] = {
-            "spd": mean_speed,
-            "alt": mean_alt,
-            "timestamp": t_first,
-        }
-        t_first = n_p.stop
+            t_small = f.after(t_first)
+            if t_small is not None:
+                t_small = t_small.before(n_p.stop)
+            # else:
+            #     print(t_first)
+            #     print(n_p.stop)
+            #     print(new_nav)
+            #     input("kill me")
+            if t_small is None:
+                # print(f.data["timedelta"].head(10))
+                print("None ", t_first)
+                print("None ", n_p.stop)
+            else:
+                mean_speed = t_small.data["groundspeed"].mean()
+                mean_alt = t_small.data["altitude"].mean()
+                print(mean_speed, mean_alt)
+                # dic[n_p.navaid] = {
+                #     "spd": mean_speed,
+                #     "alt": mean_alt,
+                #     "timestamp": t_first,
+                # }
+                alt_speed_list.append(
+                    {
+                        "spd": mean_speed,
+                        "alt": mean_alt,
+                        "timestamp": t_first,
+                        "name": n_p.navaid,
+                        'start':n_p.start,
+                        'stop': n_p.stop,
+                    }
+                )
+            t_first = n_p.stop
 
     t_small = f.after(t_first)
     if t_small is not None:
         mean_speed = t_small.data["groundspeed"].mean()
         mean_alt = t_small.data["altitude"].mean()
-        dic["end"] = {"spd": mean_speed, "alt": mean_alt, "timestamp": t_first}
+        # dic["end"] = {"spd": mean_speed, "alt": mean_alt, "timestamp": t_first}
+        alt_speed_list.append(
+            {
+                "spd": mean_speed,
+                "alt": mean_alt,
+                "timestamp": t_first,
+                "name": "end",
+                'start':t_first,
+                'stop': f.stop,
+            }
+        )
 
-    print(dic)
+    print(alt_speed_list)
 
-    return dic
+    return alt_speed_list
 
 
 def gen_instruct_f(
@@ -328,8 +360,6 @@ def gen_instruct_f(
     """
     return the instruct for a specific flight in a scenario
     """
-
-   
 
     f_data = flight.data
     acid = f_data.iloc[0]["flight_id"]
@@ -340,15 +370,16 @@ def gen_instruct_f(
         with open(path_log.split(".")[0] + "_denied_flight.txt", "a") as file:
             file.write(flight.flight_id + "\n")
         return ""
-    
+
     means = mean_alt_spd(flight, nav_p)
 
     prev_wpt = ""
-    previous_start = nav_p.data.iloc[0]["start"]
+    # previous_start = nav_p.data.iloc[0]["start"]
+    previous_start = means[0]["start"]
     start = ""
-    for i, (_, row) in enumerate(nav_p.data.iterrows()):
+    for i, row in enumerate(means):
         # print(row)
-        if row["name"] != prev_wpt:
+        if row["name"] != prev_wpt and row["name"] != "end":
             if i != 0:
                 diff_time = (start - previous_start).total_seconds()
                 text += schedule(
@@ -359,10 +390,10 @@ def gen_instruct_f(
                     diff_time, delwpt(acid, prev_wpt)
                 )  # deleting the previous waypoint, useful if the waypoint is never reached
                 text += schedule(
-                    diff_time, set_alt(acid, means[row["name"]]["alt"])
+                    diff_time, set_alt(acid, row["alt"])
                 )  # deleting the previous waypoint, useful if the waypoint is never reached
                 text += schedule(
-                    diff_time, set_spd(acid, means[row["name"]]["spd"])
+                    diff_time, set_spd(acid, row["spd"])
                 )  # deleting the previous waypoint, useful if the waypoint is never reached
                 start = row["stop"]
             else:
@@ -372,29 +403,38 @@ def gen_instruct_f(
                     f_data.iloc[0]["latitude"],
                     f_data.iloc[0]["longitude"],
                     f_data.iloc[0]["track"],
-                    means[row["name"]]["alt"],
-                    means[row["name"]]["spd"],
+                    row["alt"],
+                    row["spd"],
                 )
                 text += addwpt(acid, row["name"])
                 start = row["stop"]
             prev_wpt = row["name"]
 
-    if start != flight.stop:
+    if "end" == means[-1]["name"]:
+        print(means)
+        print(flight.stop)
         diff_time = (flight.stop - previous_start).total_seconds()
+
         text += schedule(
-                        diff_time, set_alt(acid, means["end"]["alt"])
+            diff_time, delwpt(acid, prev_wpt)
         )  # deleting the previous waypoint, useful if the waypoint is never reached
         text += schedule(
-                        diff_time, set_spd(acid, means["end"]["spd"])
+            diff_time, set_alt(acid, means[-1]["alt"])
+        )  # deleting the previous waypoint, useful if the waypoint is never reached
+        text += schedule(
+            diff_time, set_spd(acid, means[-1]["spd"])
         )  # deleting the previous waypoint, useful if the waypoint is never reached
 
     return text
 
-def set_alt(acid:str,alt:float) -> str:
+
+def set_alt(acid: str, alt: float) -> str:
     return START + f"ALT {acid}, {alt}\n"
 
-def set_spd(acid:str,spd:float) -> str:
-    return START + f"ALT {acid}, {spd}\n"
+
+def set_spd(acid: str, spd: float) -> str:
+    return START + f"SPD {acid}, {spd}\n"
+
 
 # def gen_instruct_f(
 #     flight: Flight, nav_p: Flight, path_log: str, typecode: str = ""

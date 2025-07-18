@@ -363,9 +363,12 @@ class CVAE_ONNX:
     Class used to create
     """
 
-    def __init__(self, onnx_dir: str, device: str = "cpu") -> None:
+    def __init__(
+        self, onnx_dir: str, device: str = "cpu", condition_pseudo: bool = False
+    ) -> None:
         self.device = device
         self.onnx_dir = onnx_dir
+        self.conditioned_pseudo = condition_pseudo
 
         # Load ONNX sessions
         self.encoder_sess = ort.InferenceSession(
@@ -390,6 +393,7 @@ class CVAE_ONNX:
             f"{onnx_dir}/labels_decoder_broadcast.onnx",
             providers=["CPUExecutionProvider"],
         )
+
 
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
@@ -438,19 +442,73 @@ class CVAE_ONNX:
     def pseudo_inputs_latent(
         self, label: torch.Tensor = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        pseudo_inputs = self.pseudo_inputs_sess.run(None, {})[0]
-        if self.conditioned_prior:
-            pseudo_labels = self.pseudo_labels_sess.run(None, {})[0]
-        else:
-            pseudo_labels = None
+        if label is None:
+            pseudo_inputs = self.pseudo_inputs_sess.run(None, {})[0]
+            print(pseudo_inputs.shape)
+            if self.conditioned_prior:
+                pseudo_labels = self.pseudo_labels_sess.run(None, {})[0]
+            else:
+                pseudo_labels = None
 
-        pseudo_inputs_tensor = torch.tensor(pseudo_inputs)
-        pseudo_labels_tensor = (
-            torch.tensor(pseudo_labels) if pseudo_labels is not None else None
-        )
-        return self.encode(
-            pseudo_inputs_tensor, pseudo_labels_tensor
-        )  # wierd no view()
+            pseudo_inputs_tensor = torch.tensor(pseudo_inputs)
+            pseudo_labels_tensor = (
+                torch.tensor(pseudo_labels)
+                if pseudo_labels is not None
+                else None
+            )
+            return self.encode(
+                pseudo_inputs_tensor, pseudo_labels_tensor
+            )  # wierd no view()
+        else:
+            # lab = label.repeat_interleave(
+            #     self.pseudo_num, dim=0
+            # )  # to use the given labels
+            unique = torch.unique(label, dim=0)
+
+            pseudo_inputs_list = []
+            mus = []
+            log_vars = []
+
+            for l in unique:
+
+                pseudo_input = self.pseudo_inputs_sess.run(
+                    None, {"input_0": l.unsqueeze(0).cpu().numpy().astype(np.float32)}
+                )
+                pseudo_input = torch.Tensor(pseudo_input)
+
+                pseudo_input = pseudo_input.reshape(-1, 4, self.seq_len)
+                pseudo_inputs_list.append(pseudo_input)
+                temp = l.unsqueeze(0).repeat_interleave(1000, dim=0)
+                mu, log_var = self.encode(pseudo_input, temp)
+                mus.append(mu)
+                log_vars.append(log_var)
+
+            mu = torch.cat(mus, dim=0)
+            log_var = torch.cat(log_vars, dim=0)
+
+            pseudo_inputs: torch.Tensor = torch.cat(pseudo_inputs_list, dim=0)
+
+            label_to_unique = {
+                tuple(unique[i].tolist()): (
+                    mu[1000 * i : 1000 * (i + 1)],
+                    log_var[1000 * i : 1000 * (i + 1)],
+                )
+                for i in range(len(unique))
+            }
+
+            vectors = [
+                label_to_unique[tuple(label[i].tolist())]
+                for i in range(len(label))
+            ]
+            mu = torch.concat([val for val, _ in vectors], dim=0)
+
+            log_var = torch.concat([val for _, val in vectors], dim=0)
+
+            batch_size = label.shape[0]
+            mu = mu.view(batch_size, 1000, -1)
+            log_var = log_var.view(batch_size, 1000, -1)
+
+            return mu, log_var
 
     def get_prior_weight(self, label: torch.Tensor = None) -> torch.Tensor:
         if self.conditioned_prior:
@@ -485,6 +543,9 @@ class CVAE_ONNX:
         torch.Tensor,
     ]:
         x = x.permute(0, 2, 1)
+        if not self.condition_pseudo:
+            label = None
+
         mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent(label)
         mu, log_var = self.encode(x, label)
         z = self.reparametrize(mu, log_var)  # no permute for x
@@ -527,7 +588,12 @@ class CVAE_ONNX:
         self, num_sample: int, label: torch.Tensor
     ) -> torch.Tensor:  # modify sampling and test
         """ """
-        mu, log_var = self.pseudo_inputs_latent()
+        mu, log_var = self.pseudo_inputs_latent(
+            label if self.conditioned_pseudo else None
+        )
+        if self.conditioned_prior:
+            mu = mu.squeeze(0)
+            log_var = log_var.squeeze(0)
         prior_weights = self.get_prior_weight(label).cpu()
         # weights = prior_weights.squeeze().cpu().numpy()
         # weights /= weights.sum()

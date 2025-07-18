@@ -14,7 +14,22 @@ from numpy._typing._array_like import NDArray
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Flight, Traffic
 
+def convert_labels(labels:np.ndarray,one_hot:OneHotEncoder,aircraft_spec:dict) ->NDArray:
+        """Returns all the labels in one hot encoded labels"""
+        labels = labels.reshape(-1, 1)
 
+        encoded = one_hot.transform(labels)
+
+        if aircraft_spec is not None:
+            aircrafts_spec = np.array([
+                [
+                    aircraft_spec[typecode][spec]
+                    for spec in aircraft_spec[typecode].keys()
+                ]
+                for typecode in labels.flatten()
+            ])
+            encoded = np.concatenate((encoded, aircrafts_spec), axis=1)
+        return encoded
 ### Function to get the mean end point of the trajectories
 def get_mean_end_point(traff: Traffic) -> tuple:
     """
@@ -149,9 +164,10 @@ class Data_cleaner:
         one_hot: OneHotEncoder = None,
         no_data: bool = False,
         mean_point: tuple[float, float] = None,
+        aircraft_spec: dict = None,
     ):
         # Check if we have any filename provided
-
+        self.aircraft_spec = aircraft_spec
         if no_data:
             self.one_hot = one_hot
             self.scaler = min_max
@@ -219,29 +235,30 @@ class Data_cleaner:
         self.one_hot = OneHotEncoder(sparse_output=False)
 
         if "vertical_rate" not in self.basic_traffic_data.data.columns:
-            self.basic_traffic_data =  self.comp_vertical_rates()
+            self.basic_traffic_data = self.comp_vertical_rates()
         self.mean_point = None
         if is_ascending(self.basic_traffic_data):
             self.mean_point = self.get_mean_start_point()
         else:
             self.mean_point = self.get_mean_end_point()
 
-    def save_scalers(self,path:str)->None:
+    def save_scalers(self, path: str) -> None:
         """
         Saves the scaler, the mean end point, and the one hot encoder as a tuple in the designated pickle file.
         """
-        scalers = (self.scaler,self.one_hot,self.mean_point,self.columns)
-        with open(path,"wb") as f:
-            pickle.dump(scalers,file = f)
-    
-    def load_scalers(self,path:str)->None:
+        scalers = (self.scaler, self.one_hot, self.mean_point, self.columns)
+        with open(path, "wb") as f:
+            pickle.dump(scalers, file=f)
+
+    def load_scalers(self, path: str) -> None:
         """
         Laods the scaler, the mean end point, and the one hot encoder as a tuple from the designated pickle file.
         """
         with open(path, "rb") as f:
-            self.scaler,self.one_hot,self.mean_point,self.columns = pickle.load(f)
+            self.scaler, self.one_hot, self.mean_point, self.columns = (
+                pickle.load(f)
+            )
         return
-
 
     def get_typecodes_labels(self) -> list[str]:
         """
@@ -421,7 +438,32 @@ class Data_cleaner:
         labels = np.array(
             [flight.typecode for flight in self.basic_traffic_data]
         ).reshape(-1, 1)
-        return self.one_hot.fit_transform(labels)
+
+
+
+
+
+        encoded = self.one_hot.fit_transform(labels)
+
+        if self.aircraft_spec is not None:
+            aircrafts_spec = np.array([
+                [
+                    self.aircraft_spec[f.typecode][spec]
+                    for spec in self.aircraft_spec[f.typecode].keys()
+                ]
+                for f 
+                in self.basic_traffic_data
+            ])
+            print(aircrafts_spec.shape)
+            print(encoded.shape)
+            print(aircrafts_spec)
+            encoded = np.concatenate((encoded, aircrafts_spec), axis=1)
+            print(encoded.shape)
+            print(encoded)
+        
+
+        
+        return encoded
         # return np.array([flight.typecode for flight in self.basic_traffic_data])
 
     ### Function to get the mean end point of the trajectories
@@ -432,7 +474,7 @@ class Data_cleaner:
 
     def get_mean_start_point(self) -> tuple:
         if not self.mean_point:
-            self.mean_point =get_mean_start_point(self.basic_traffic_data)
+            self.mean_point = get_mean_start_point(self.basic_traffic_data)
         return self.mean_point
 
     ### Function to unscale the data
@@ -675,9 +717,7 @@ def filter_missing_values_flight(
         return new_f
 
 
-def return_labels(traffic:Traffic,one_hot:OneHotEncoder) -> np.ndarray:
-        """Returns all the labels in one hot encoded labels"""
-        labels = np.array(
-            [flight.typecode for flight in traffic]
-        ).reshape(-1, 1)
-        return one_hot.transform(labels)
+def return_labels(traffic: Traffic, one_hot: OneHotEncoder) -> np.ndarray:
+    """Returns all the labels in one hot encoded labels"""
+    labels = np.array([flight.typecode for flight in traffic]).reshape(-1, 1)
+    return one_hot.transform(labels)

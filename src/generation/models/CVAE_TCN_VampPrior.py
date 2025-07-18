@@ -150,7 +150,10 @@ class TCN_encoder(nn.Module):
         mu = self.mu_layer(x_label)
         log_var = self.logvar_layer(x_label)
         return mu, log_var
-#ok
+
+
+# ok
+
 
 ## Decoder
 class TCN_decoder(nn.Module):
@@ -213,7 +216,8 @@ class TCN_decoder(nn.Module):
 
         return x
 
-#ok
+
+# ok
 class Pseudo_labels_generator(nn.Module):
     """
     Model used to generate the pseudo labels.
@@ -241,7 +245,10 @@ class Pseudo_labels_generator(nn.Module):
         pseudo_labels = self.second_layer(pseudo_labels)
         # pseudo_labels = self.dropout(pseudo_labels)
         return pseudo_labels
-#ok
+
+
+# ok
+
 
 class Label_mapping(nn.Module):
     """
@@ -268,8 +275,9 @@ class Label_mapping(nn.Module):
 
     def forward(self, labels: torch.Tensor) -> torch.Tensor:
         return self.fcl(labels) if self.fcl else self.embbedings(labels)
-    
-#ok
+
+
+# ok
 
 
 class Label_mapping_traj_part(nn.Module):
@@ -326,7 +334,10 @@ class Weight_Prior_Conditioned(nn.Module):
     def forward(self, label: torch.Tensor) -> torch.Tensor:
         label = self.fc_layer(label)
         return label.unsqueeze(0)
-#ok
+
+
+# ok
+
 
 class Weight_Prior_Conditioned_complexe(nn.Module):
     """
@@ -389,6 +400,7 @@ class CVAE_TCN_Vamp(nn.Module):
         init_std: float = 1,
         d_weight: bool = False,
         pseudo_labels: bool = True,
+        cond_pseudo: bool = False,
     ):
         super(CVAE_TCN_Vamp, self).__init__()
         self.label_dim = label_dim
@@ -438,11 +450,13 @@ class CVAE_TCN_Vamp(nn.Module):
             labels_latent_dim=label_latent,
         )
 
-        self.pseudo_inputs_layer = Pseudo_inputs_generator(
-            in_channels,
-            seq_len,
-            pseudo_input_num,
-            dropout=dropout,
+        self.pseudo_inputs_layer = (
+            Pseudo_inputs_generator(
+                in_channels,
+                seq_len,
+                pseudo_input_num,
+                dropout=dropout,
+            )
         )
 
         self.pseudo_labels_layer = Pseudo_labels_generator(
@@ -474,7 +488,7 @@ class CVAE_TCN_Vamp(nn.Module):
         self.early_stopping = early_stopping
         self.patience = patience
         self.min_delta = min_delta
-        #ok
+        # ok
 
     def is_conditioned(self) -> bool:
         """
@@ -495,7 +509,8 @@ class CVAE_TCN_Vamp(nn.Module):
             label = label.view(-1, 1, self.seq_len)
         mu, log_var = self.encoder(x, label)
         return mu, log_var
-    #ok
+
+    # ok
 
     def pseudo_inputs_latent(
         self, label: torch.Tensor = None
@@ -535,8 +550,8 @@ class CVAE_TCN_Vamp(nn.Module):
             # print("mu shape ", mu.shape)
 
         return mu, log_var
-    
-    #ok
+
+    # ok
 
     def reparametrize(
         self, mu: torch.Tensor, log_var: torch.Tensor
@@ -556,8 +571,8 @@ class CVAE_TCN_Vamp(nn.Module):
 
         x = self.decoder(z, label)
         return x
-    
-    #ok
+
+    # ok
 
     def get_prior_weight(self, labels: torch.Tensor = None) -> torch.Tensor:
         """
@@ -570,14 +585,16 @@ class CVAE_TCN_Vamp(nn.Module):
 
         if self.prior_weights_layers:
             # print(labels.shape)
-            prior_weights = self.prior_weights_layers(labels.view(labels.size(0), -1))
+            prior_weights = self.prior_weights_layers(
+                labels.view(labels.size(0), -1)
+            )
             # print(prior_weights)
             # print(prior_weights.shape)
             return prior_weights
         else:
             return self.prior_weights
-        
-    #ok
+
+    # ok
 
     def forward(
         self,
@@ -645,7 +662,7 @@ class CVAE_TCN_Vamp(nn.Module):
             else None
         )
 
-        #ok cool
+        # ok cool
 
         for epoch in tqdm(range(epochs), desc="Epochs"):
             total_loss = 0.0
@@ -663,7 +680,7 @@ class CVAE_TCN_Vamp(nn.Module):
                 )
 
                 prior_weight = self.get_prior_weight(labels_batch)
-                #ok
+                # ok
 
                 lbl_weights = (
                     torch.Tensor(
@@ -678,7 +695,9 @@ class CVAE_TCN_Vamp(nn.Module):
                     )
                 )
 
-                x_loss = x_batch.permute(0, 2, 1)  ##to delete --> maybe dangerous
+                x_loss = x_batch.permute(
+                    0, 2, 1
+                )  ##to delete --> maybe dangerous
 
                 loss = CVAE_vamp_prior_loss_label_weights(
                     x_loss,  # x_batch.permute(0, 2, 1),
@@ -692,7 +711,7 @@ class CVAE_TCN_Vamp(nn.Module):
                     scale=self.log_std,
                     vamp_weight=prior_weight,
                 )
-                #ok
+                # ok
 
                 # gradiants
                 optimizer.zero_grad()
@@ -904,7 +923,7 @@ class CVAE_TCN_Vamp(nn.Module):
             batch_size,
             0.9,
             shuffle=False,
-            num_worker=self.num_worker
+            num_worker=self.num_worker,
         )
         i = 0
         batches_reconstructed = []
@@ -1069,7 +1088,9 @@ class CVAE_TCN_Vamp(nn.Module):
         with torch.no_grad():
             return self.pseudo_labels_layer.forward()
 
-    def save_model_ONNX(self, save_dir: str, opset_version: int = 17) -> None:
+    def save_model_ONNX(
+        self, save_dir: str, opset_version: int = 17, cond: bool = False
+    ) -> None:
         """
         Exports each neural net of the CVAE into ONNX files.
         The path where these neural nets are saved is save_dir.
@@ -1081,7 +1102,7 @@ class CVAE_TCN_Vamp(nn.Module):
         """
         os.makedirs(save_dir, exist_ok=True)
 
-        torch.save(self.log_std,f"{save_dir}/log_std.pt")
+        torch.save(self.log_std, f"{save_dir}/log_std.pt")
         print("log std :", self.log_std)
 
         dummy_inputs = {
@@ -1101,7 +1122,11 @@ class CVAE_TCN_Vamp(nn.Module):
                     next(self.parameters()).device
                 ),
             ),
-            "pseudo_inputs_layer": (),
+            "pseudo_inputs_layer": ()
+            if not cond
+            else torch.randn(1, 1, self.seq_len).to(
+                next(self.parameters()).device
+            ),
             "pseudo_labels_layer": (),
             "labels_encoder_broadcast": torch.randn(1, self.label_dim).to(
                 next(self.parameters()).device

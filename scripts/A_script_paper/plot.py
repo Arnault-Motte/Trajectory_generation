@@ -3,7 +3,7 @@
 import pandas as pd
 
 df = pd.read_csv(
-    "/home/arnault/traffic/data_orly/figures/paper/compare_profile/profile_end/mean_profile_no_filter_centroid_mean_profiles_g.csv"
+    "/home/arnault/traffic/data_orly/figures/paper/compare_profile/profile_end/mean_profile_no_filter_centroid_mean_profiles.csv"
 )
 # %%
 import altair as alt

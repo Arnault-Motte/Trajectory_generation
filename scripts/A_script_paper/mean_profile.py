@@ -1,7 +1,9 @@
+import pickle
 import sys  # noqa: I001
 import os
 
 from tqdm import tqdm
+
 
 CURRENT_PATH = os.getcwd()
 sys.path.append(os.path.abspath(CURRENT_PATH))
@@ -22,6 +24,7 @@ from data_orly.src.generation.data_process import (
 from data_orly.src.generation.generation import Generator, ONNX_Generator
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
+from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
 from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
 from data_orly.src.generation.test_display import (
     plot_traffic,
@@ -34,7 +37,7 @@ import altair as alt
 import pandas as pd
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
-
+import pandas as pd
 import statistics
 
 
@@ -116,7 +119,7 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
     print("max_flight_diff_2 : ", max_alt_diff(traffic))
     max_diff_alt = max_alt_diff_per_traff(traffic)
     print(
-        "number of fucked traff: ",
+        "number of bad traff: ",
         len([elem for elem in max_diff_alt if elem > 2000]),
     )
 
@@ -187,7 +190,9 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
 
     threshold = 100
 
-    mask = nan_counts <= len(traffic) - threshold  # we want to have at least threshold vals, before computing the mean
+    mask = (
+        nan_counts <= len(traffic) - threshold
+    )  # we want to have at least threshold vals, before computing the mean
 
     array_alts = array_alts[:, mask]
 
@@ -195,6 +200,8 @@ def get_mean_profile(traffic: Traffic) -> tuple[pd.DataFrame, Flight]:
         array_alts,
         axis=0,
     )
+
+    mean_profile["std"] = np.nanstd(array_alts, axis=0)
 
     cas_array = np.array(
         [
@@ -264,6 +271,7 @@ def mean_profile_per_typecodes(
         centroid_data = centroid.data[["altitude", "CAS", "vertical_rate"]]
         centroid_data["generated"] = label + "_centroid"
         centroid_data["typecode"] = typecode
+        centroid_data["std"] = None
         centroid_data = centroid_data[centroid_data["altitude"] < 20000]
 
         mean_prof_total = pd.concat(
@@ -272,16 +280,51 @@ def mean_profile_per_typecodes(
     return mean_prof_total
 
 
+def gen_per_vae(
+    list_vae: list[str], typecodes: list[str], n: int, batch_size: int = 500
+) -> Traffic:
+    """
+    Generates the traffic composed of n_flights for each vae model path in the list.
+    list_vae is a list of the onnx dir for each vae.
+    typecodes is the list of the typecodes associated with each vae.
+    """
+    traffs = []
+    for vae_path in list_vae:
+        data_cleaner = Data_cleaner(no_data=True)
+        data_cleaner.load_scalers(vae_path + "/scalers.pkl")
+        model = VAE_ONNX(vae_path)
+        gen = ONNX_Generator(model, data_cleaner)
+        t = gen.generate_n_flight(n, batch_size, lat_long=False)
+        traffs.append(t)
+
+    vae_traffs: Traffic = sum(traffs)
+
+    tc = [typecodes[i // (n * 200)] for i in range(n * len(typecodes) * 200)]
+    icao24 = [i // 200 for i in range(n * len(typecodes) * 200)]
+    callsign = icao24
+
+    vae_traffs = vae_traffs.assign(typecode=tc)
+    vae_traffs = vae_traffs.assign(icao24=icao24)
+    vae_traffs = vae_traffs.assign(callsign=callsign)
+    vae_traffs = vae_traffs.assign_id().eval(
+        desc="assigning ids", max_workers=4
+    )
+
+    return vae_traffs
+
+
 def profile_gen_and_not_gen(
     generator: ONNX_Generator,
     traffic_og: Traffic,
     typecodes: list[str],
     n_flights: int = 1000,
     batch_size: int = 500,
+    list_vaes: list[str] = [],
+    spec:dict[dict] = None,
 ) -> pd.DataFrame:
     ##generated dataframe
     traffics = generator.generate_n_flight_per_labels(
-        typecodes, n_flights, batch_size=batch_size
+        typecodes, n_flights, batch_size=batch_size,spec=spec
     )
     tc = [
         typecodes[i // (n_flights * 200)]
@@ -296,15 +339,30 @@ def profile_gen_and_not_gen(
     f_traf = f_traf.assign(callsign=callsign)
     f_traf = f_traf.assign_id().eval(desc="assigning ids", max_workers=4)
 
+    if len(list_vaes) != 0:
+        print("vae_________________________________________________________")
+        vae_traff = gen_per_vae(list_vaes, typecodes, n_flights, batch_size)
+        mean_prof_vae = mean_profile_per_typecodes(
+            vae_traff,
+            label="generated_VAE",
+            typecodes=typecodes,
+            n_flights=n_flights,
+        )
+
     mean_prof = mean_profile_per_typecodes(
-        f_traf, label="generated", typecodes=typecodes, n_flights=n_flights
+        f_traf, label="generated_CVAE", typecodes=typecodes, n_flights=n_flights
     )
 
     mean_prof_og = mean_profile_per_typecodes(
         traffic_og, label="flown", typecodes=typecodes, n_flights=n_flights
     )
 
-    return pd.concat([mean_prof, mean_prof_og], axis=0)
+    return pd.concat(
+        [mean_prof,mean_prof_og, mean_prof_vae]
+        if len(list_vaes) != 0
+        else [mean_prof,mean_prof_og],
+        axis=0,
+    )
 
 
 def plot_mean_profile(mean_profile: pd.DataFrame, path: str) -> None:
@@ -320,12 +378,12 @@ def plot_mean_profile(mean_profile: pd.DataFrame, path: str) -> None:
             y=alt.Y("altitude:Q", title="Altitude"),
             color=alt.Color("generated:N", title="Generated Label"),
             strokeDash=alt.condition(
-                "datum.generated == 'generated' || datum.generated == 'flown'",
+                "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
                 alt.value([1, 0]),  # solid line
                 alt.value([4, 4]),  # dotted line
             ),
             opacity=alt.condition(
-                "datum.generated == 'generated' || datum.generated == 'flown'",
+                "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
                 alt.value(1.0),  # full opacity for "generated" or "flown"
                 alt.value(0.4),  # lower opacity for others
             ),
@@ -333,6 +391,82 @@ def plot_mean_profile(mean_profile: pd.DataFrame, path: str) -> None:
         .facet(row=alt.Row("typecode:N", title="Typecode"), columns=2)
     )
 
+    mean_profile["upper"] = mean_profile["altitude"] + mean_profile["std"]
+    mean_profile["lower"] = mean_profile["altitude"] - mean_profile["std"]
+
+    # Create the band (area between upper and lower)
+    # base = alt.Chart(mean_profile)
+    # band = (
+    #     base
+    #     .mark_area(opacity=0.2)
+    #     .encode(
+    #         x="CAS",
+    #         y="lower",F
+    #         y2="upper",
+    #         color="generated:N",
+    #         row=alt.Row("typecode:N").title(None)
+    #     )
+    # )
+
+    # chart = (
+    #     base
+    #     .mark_line()
+    #     .encode(
+    #         alt.X("CAS"),
+    #         alt.Y("altitude").title(None),
+    #         alt.Color("generated"),
+    #         alt.Row("typecode").title(None),
+    #         strokeDash=alt.condition(
+    #             "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
+    #             alt.value([1, 0]),
+    #             alt.value([4, 4]),
+    #         ),
+    #         opacity=alt.condition(
+    #             "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
+    #             alt.value(1),
+    #             alt.value(0.4),
+    #         ),
+    #     )
+    #     #.properties(height=150)
+    # )
+
+    # # Define base chart (without faceting yet)
+    # base = alt.Chart(mean_profile)
+
+    # # Band (variance area)
+    # band = base.mark_area(
+    #     opacity=1,  # no alpha blending
+    #     fillOpacity=0.1,  # visible but subtle
+    #     stroke=None,
+    # ).encode(x="CAS:Q", y="lower:Q", y2="upper:Q", color="generated:N")
+
+    # # Line (mean curve)
+    # lines = base.mark_line().encode(
+    #     x="CAS:Q",
+    #     y=alt.Y("altitude:Q").title(None),
+    #     color="generated:N",
+    #     strokeDash=alt.condition(
+    #         "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
+    #         alt.value([1, 0]),
+    #         alt.value([4, 4]),
+    #     ),
+    #     opacity=alt.condition(
+    #         "datum.generated == 'flown' || datum.generated == 'generated_CVAE' || datum.generated == 'generated_VAE'",
+    #         alt.value(1),
+    #         alt.value(0.4),
+    #     ),
+    # )
+
+    # band_outline = base.mark_line(strokeDash=[2, 2], opacity=0.5).encode(
+    #     x="CAS:Q",
+    #     y="upper:Q",
+    #     color="generated:N"
+    # )
+
+    # layer = alt.layer(band, lines,band_outline)
+    # chart = layer.facet(row=alt.Row("typecode:N").title(None))
+
+    # chart = (band + chart).properties(height=150)
     chart.save(path)
 
 
@@ -340,10 +474,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="My script with arguments")
 
     parser.add_argument(
-        "--onnx_dir",
+        "--onnx_cvae_dir",
         type=str,
         default="",
-        help="Path of the directory for the onnx file to load model",
+        help="Path of the directory for the onnx file to load the cvae model",
+    )
+
+    parser.add_argument(
+        "--onnx_vae_dirs",
+        nargs="+",
+        type=str,
+        default=[],
+        help="Paths of the directories for the vaes onnx file to load model",
     )
     parser.add_argument(
         "--typecodes",
@@ -366,29 +508,63 @@ def main() -> None:
         help="Path to the plot",
     )
 
-    args = parser.parse_args()
-
-    print(args.typecodes)
-
-    data_cleaner = Data_cleaner(
-        no_data=True
-    )  # saves scalers, and scales and modifies data, allows to interpret the model outputs
-    data_cleaner.load_scalers(args.onnx_dir + "/scalers.pkl")
-    cvae_onnx = CVAE_ONNX(args.onnx_dir)  # the CVAE
-    onnx_gen = ONNX_Generator(
-        cvae_onnx, data_cleaner
-    )  # used to gen from the CVAE
-    traff = Traffic.from_file(args.data)
-    if "typecode" not in traff.data.columns:
-        traff = traff.aircraft_data()
-    mean_prof = profile_gen_and_not_gen(
-        generator=onnx_gen,
-        traffic_og=traff,
-        typecodes=args.typecodes,
-        n_flights=2000,
+    parser.add_argument(
+        "--spec",
+        type=int,
+        default=0,
+        help="true if you want to use the model spec as label",
     )
-    mean_prof.to_parquet(args.plot_path.split(".")[0] + "_mean_profiles.pkl")
-    mean_prof.to_csv(args.plot_path.split(".")[0] + "_mean_profiles.csv")
+
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="true if the pseudo inputs of the vae are cond",
+    )
+
+    parser.add_argument(
+        "--profile_path",
+        type=str,
+        default="",
+        help="path to the profile .csv",
+    )
+
+    
+
+    args = parser.parse_args()
+    if args.profile_path == "":
+        print(args.typecodes)
+        dic_spec =None
+        if args.spec == 1:
+            with open("/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", 'rb') as handle:
+                dic_spec = pickle.load(handle)
+
+            
+
+        data_cleaner = Data_cleaner(
+            no_data=True,aircraft_spec=dic_spec
+        )  # saves scalers, and scales and modifies data, allows to interpret the model outputs
+        data_cleaner.load_scalers(args.onnx_cvae_dir + "/scalers.pkl")
+        cvae_onnx = CVAE_ONNX(args.onnx_cvae_dir,condition_pseudo=args.cond_pseudo)  # the CVAE
+        onnx_gen = ONNX_Generator(
+            cvae_onnx, data_cleaner
+        )  # used to gen from the CVAE
+        traff = Traffic.from_file(args.data)
+        if "typecode" not in traff.data.columns:
+            traff = traff.aircraft_data()
+        mean_prof = profile_gen_and_not_gen(
+            generator=onnx_gen,
+            traffic_og=traff,
+            typecodes=args.typecodes,
+            n_flights=500,
+            batch_size=500,
+            list_vaes=args.onnx_vae_dirs,
+            spec =dic_spec
+        )
+        mean_prof.to_parquet(args.plot_path.split(".")[0] + "_mean_profiles.pkl")
+        mean_prof.to_csv(args.plot_path.split(".")[0] + "_mean_profiles.csv")
+    else:
+        mean_prof = pd.read_csv(args.profile_path)
     plot_mean_profile(mean_prof, args.plot_path)
 
 
