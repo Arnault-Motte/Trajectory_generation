@@ -77,6 +77,13 @@ def main() -> None:
         help="typecodes of interest",
     )
 
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="set to true if the cvae uses conditioned pseudo inputs",
+    )
+
     args = parser.parse_args()
 
     if args.vae_onnx != []:
@@ -95,7 +102,7 @@ def main() -> None:
             scenario_create(traff, typecode, args.scn_file, model)
 
     if args.cvae_onnx != "":
-        model = CVAE_ONNX(args.cvae_onnx)
+        model = CVAE_ONNX(args.cvae_onnx,condition_pseudo=args.cond_pseudo)
         data_cleaner = Data_cleaner(no_data=True)
         data_cleaner.load_scalers(args.cvae_onnx + "/scalers.pkl")
         onnx_gen = ONNX_Generator(

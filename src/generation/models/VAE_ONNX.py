@@ -120,11 +120,11 @@ class VAE_ONNX:
             providers=["CPUExecutionProvider"],
         )
 
-        self.prior_weights: torch.Tensor = torch.load(f"{onnx_dir}/prior_w.pt").cpu()
+        self.prior_weights: torch.Tensor = torch.load(f"{onnx_dir}/prior_w.pt",map_location="cpu").cpu()
 
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
-        self.log_std : torch.Tensor = torch.load(f"{onnx_dir}/log_std.pt")
+        self.log_std : torch.Tensor = torch.load(f"{onnx_dir}/log_std.pt",map_location="cpu")
         print(f"Seq_len : {self.seq_len}")
 
     def encode(

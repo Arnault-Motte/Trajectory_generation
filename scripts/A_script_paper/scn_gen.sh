@@ -1,1 +1,2 @@
-uv run data_orly/scripts/A_script_paper/scn_gen.py --vae_onnx "data_orly/models_paper/VAE_A320_0005" --batch_size 500 --cvae_onnx "data_orly/models_paper/CVAE_0005" --typecodes A320 --scn_file data_orly/scripts/A_script_paper/scn --n_f 2000
+# uv run data_orly/scripts/A_script_paper/scn_gen.py --vae_onnx "data_orly/models_paper/VAE_A320_0005" --cond_pseudo 1 --batch_size 500 --cvae_onnx "data_orly/models_paper/CVAE_5_A320_0005_cond" --typecodes A320 --scn_file data_orly/scripts/A_script_paper/scn --n_f 2000
+uv run data_orly/scripts/A_script_paper/scn_gen.py --cond_pseudo 1 --batch_size 500 --cvae_onnx "data_orly/models_paper/CVAE_5_A320_0005_cond" --typecodes A320 --scn_file data_orly/scripts/A_script_paper/scn/cond --n_f 2000

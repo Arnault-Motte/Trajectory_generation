@@ -398,7 +398,7 @@ class CVAE_ONNX:
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
         print(f"Seq_len : {self.seq_len}")
-        self.log_std = torch.load(f"{onnx_dir}/log_std.pt")
+        self.log_std = torch.load(f"{onnx_dir}/log_std.pt",map_location="cpu")
 
         try:
             self.prior_weights_sess = ort.InferenceSession(
@@ -543,7 +543,7 @@ class CVAE_ONNX:
         torch.Tensor,
     ]:
         x = x.permute(0, 2, 1)
-        if not self.condition_pseudo:
+        if not self.conditioned_pseudo:
             label = None
 
         mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent(label)

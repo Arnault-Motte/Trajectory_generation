@@ -1,0 +1,3 @@
+Model_type, typecode, typecodes, e_dist 
+CVAE_ONNX, A320, 0.0273767845989336
+CVAE_ONNX, B738, 0.003998734509085873

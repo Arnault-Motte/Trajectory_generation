@@ -108,6 +108,13 @@ def main() -> None:
         help="Number of flight to generate per trial",
     )
 
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="1 if the CVAE uses conditioned pseudo inputs",
+    )
+
 
     args = parser.parse_args()
 
@@ -125,7 +132,7 @@ def main() -> None:
         og_scaler = data_cleaner.scaler #used to rescal the CVAE and VAE data to the same range, otherwise we cannot compare the two e_dist values
 
         # generating with CVAE
-        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX)  # the CVAE
+        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX,condition_pseudo=args.cond_pseudo)  # the CVAE
         onnx_gen = ONNX_Generator(
             cvae_onnx, data_cleaner
         )  # used to gen from the CVAE
