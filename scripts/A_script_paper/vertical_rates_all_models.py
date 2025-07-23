@@ -180,6 +180,13 @@ def main() -> None:
         help="If different than the empty string, will load the already created vertical rate dataframe instead of regenerating with the CVAE and the VAE",
     )
 
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="equal to 1 if the CVAE as conditioned output",
+    )
+
 
     args = parser.parse_args()
 
@@ -192,7 +199,7 @@ def main() -> None:
         data_cleaner.load_scalers(args.CVAE_ONNX + "/scalers.pkl")
 
         # generating with CVAE
-        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX)  # the CVAE
+        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX,condition_pseudo=args.cond_pseudo)  # the CVAE
         onnx_gen = ONNX_Generator(
             cvae_onnx, data_cleaner
         )  # used to gen from the CVAE

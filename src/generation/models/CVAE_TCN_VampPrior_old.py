@@ -704,7 +704,24 @@ class CVAE_TCN_Vamp_old(nn.Module):
                 else label.view(-1, self.in_channels, self.seq_len)
             )
             # print(label.shape)
+        
+        x = x.to(next(self.encoder.parameters()).device)
+        label = label.to(
+            next(self.encoder.parameters()).device
+        )
+        if mask is not None:
+            mask = mask.to(next(self.encoder.parameters()).device)
+
         mu, log_var = self.encoder(x, label, mask)
+
+        mu = mu.to(next(self.decoder.parameters()).device)
+        log_var = log_var.to(next(self.decoder.parameters()).device)
+        x = x.to(next(self.decoder.parameters()).device)
+        label = label.to(
+            next(self.decoder.parameters()).device
+        )
+        if mask is not None:
+            mask = mask.to(next(self.decoder.parameters()).device)
         return mu, log_var
 
     def pseudo_inputs_latent(
@@ -745,12 +762,28 @@ class CVAE_TCN_Vamp_old(nn.Module):
         mini_batch_size = 600
 
         if self.conditioned_pseudo_in:
+
+            # unique_labels, inverse_indices = torch.unique(label, dim=0, return_inverse=True)
+            # pseudo_inputs = self.pseudo_inputs_layer.forward(unique_labels)  # Shape: [num_unique, pseudo_num, ...]
+            # pseudo_inputs = pseudo_inputs.reshape(-1, self.in_channels, self.seq_len)
+
+            # expanded_labels = unique_labels.repeat_interleave(self.pseudo_num, dim=0)
+            # mu_all, log_var_all = self.encode(pseudo_inputs, expanded_labels)
+            # mu = mu_all.view(len(unique_labels), self.pseudo_num, -1)[inverse_indices]
+            # log_var = log_var_all.view(len(unique_labels), self.pseudo_num, -1)[inverse_indices]
+            # return mu, log_var
+
+            ##ol ver
             unique = torch.unique(label, dim=0)
 
             pseudo_inputs_list = []
             mus = []
             log_vars = []
             for l in unique:
+
+
+
+                
                 pseudo_input = self.pseudo_inputs_layer.forward(l.unsqueeze(0))
                 pseudo_inputs_list.append(pseudo_input)
                 pseudo_input = pseudo_input.reshape(
@@ -935,6 +968,7 @@ class CVAE_TCN_Vamp_old(nn.Module):
         # print(labels_encoder.shape)
         # print(x.shape)
         mu, log_var = self.encode(x, labels_encoder, mask)
+
         z = self.reparametrize(mu, log_var).to(next(self.parameters()).device)
         l_msk = label_msk if label_msk is not None else mask
         if l_msk is not None:
@@ -953,12 +987,17 @@ class CVAE_TCN_Vamp_old(nn.Module):
         gamma: float = 0.5,
         loss_full: bool = False,  ## to delete true if you want the loss to reproduce the label as well
         label_msk: bool = False,
+        offload_enc: str = "",
     ) -> None:
         """
         Fits the model to the data x in entry of the function. Early stopping is
         always activated.
         """
         self.train()
+        if offload_enc == "":
+            offload_enc = next(self.parameters()).device
+
+        self.encoder = self.encoder.to(offload_enc)
         optimizer = optim.Adam(self.parameters(), lr=lr)
         dataloader_train, data_loader_val = get_data_loader(
             x,

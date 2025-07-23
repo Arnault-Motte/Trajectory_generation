@@ -52,24 +52,35 @@ def main() -> None:
     )
 
     parser.add_argument(
-        "--typecode",
+        "--typecodes",
+        type=str,
+        default=[],
+        nargs="+",
+        help="typecode of the data to select",
+    )
+
+    parser.add_argument(
+        "--navpoint_path",
         type=str,
         default="",
-        help="typecode of the data to select",
+        help="if the navpoints have already been created you can reuse them by passing their saved csv path",
     )
     args = parser.parse_args()
 
-    data_clean = Data_cleaner(
-        file_name=args.data,
-        airplane_types_num=10 if args.typecode == "" else -1,
-        chosen_typecodes=[args.typecode] if args.typecode != "" else [],
-    )
-    data_clean.return_labels()  # computing the labels
 
-    labels = data_clean.get_typecodes_labels()
+    
+
+
+    # data_clean.return_labels()  # computing the labels
+    t_f = Traffic.from_file(args.data)
+    t_f = t_f.aircraft_data()
+    if len(args.typecodes) != 0:
+        t_f = t_f.query(f'typecode in {args.typecodes}') 
+    
+    labels = args.typecodes
     total_f_traff = []
     for label in tqdm(labels):
-        d = data_clean.basic_traffic_data.query(f'typecode == "{label}"')
+        d = t_f.query(f'typecode == "{label}"')
         if (
             len(d) > args.nf
         ):  # sampling a smaller number of traejctory (else it's hell)
@@ -77,13 +88,14 @@ def main() -> None:
         total_f_traff.append(d)
 
     t_f: Traffic = sum(total_f_traff)
-    t_f.to_pickle(args.data_s)
+    if args.data_s != "":
+        t_f.to_pickle(args.data_s)
 
     s = Simulator(t_f)
     s.scenario_create(
         args.scn_file,
         log_f_name=args.scn_file.split(".")[0] + ".txt",
-        load_file="",
+        load_file=args.navpoint_path,
         typecode="0",
     )
 

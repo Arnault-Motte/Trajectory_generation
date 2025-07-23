@@ -20,10 +20,12 @@ from data_orly.src.generation.data_process import (
     compute_vertical_rate,
     jason_shanon,
 )
+from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
     get_data_loader as get_data_loader_labels,
 )
+from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
 from data_orly.src.generation.models.VAE_TCN_VampPrior import (
     VAE_TCN_Vamp,
     get_data_loader,
@@ -351,7 +353,7 @@ def plot_latent_space_for_label(
     labels_true = np.array(
         [label for _ in traffic_curated[: min(num_point, len(traffic_curated))]]
     ).reshape(-1, 1)
-    transformed_true_labels = self.data_clean.one_hot.transform(labels_true)
+    transformed_true_labels = data_cleaner.one_hot.transform(labels_true)
 
     train, _ = get_data_loader_labels(data, transformed_true_labels, 500, 0.8)
 
@@ -404,7 +406,188 @@ def plot_latent_space_for_label(
         )
         ax.title.set_text("Latent Space")
         ax.legend()
+        plt.show()
+        plt.savefig(plt_path)
 
+    return 0
+
+
+
+def latent_space_CVAE(
+    data_cleaner: Data_cleaner,
+    typecodes:list[str],
+    num_point: int,
+    model: CVAE_ONNX,
+    plt_path: str,
+    traff :Traffic,
+) -> int:
+    """Plots the latent space associated to the selected label of the CVAE"""
+
+
+    total_pca = []
+
+    for label in typecodes:
+        traffic_curated = traff.query(f"typecode =='{label}'")
+
+        data = data_cleaner.clean_data_specific(traffic_curated)[
+            : min(num_point, len(traffic_curated))
+        ]
+
+        labels_true = np.array(
+            [label for _ in traffic_curated[: min(num_point, len(traffic_curated))]]
+        ).reshape(-1, 1)
+        transformed_true_labels = data_cleaner.one_hot.transform(labels_true)
+
+        train, _ = get_data_loader_labels(data, transformed_true_labels, 500, 0.99)
+
+        list_tensor = [batch[0] for batch in train]
+        all_tensor = torch.concat(list_tensor)
+
+        list_labels = [labels for _, labels in train]
+        all_labels = torch.concat(list_labels)
+        all_tensor = all_tensor.permute(0, 2, 1)
+
+        ## getting mu and sigma
+        mu, log_var = model.encode(all_tensor, all_labels)
+        scale = (log_var / 2).exp()
+        # get the actual distribution
+        distribution = Independent(Normal(mu, scale), 1)
+
+        posterior_samples = distribution.rsample()
+
+        prior_sample = model.sample_from_conditioned_prior(num_point,all_labels[0].unsqueeze(0)).squeeze(1)
+        print(f"posterior shape {posterior_samples.shape}")
+        print(f"prior shape : {prior_sample.shape}")
+
+        total = np.concat(
+            (
+                posterior_samples.cpu().detach().numpy(),
+                prior_sample.cpu().detach().numpy(),
+            ),
+            axis=0,
+        )
+
+        
+        pca = PCA(n_components=2).fit(total[:-num_point])
+        embeded = pca.transform(total)
+        total_pca.append(embeded)
+
+    with plt.style.context("traffic"):
+        n_columns = 4
+        n_lines = len(typecodes) // 4
+        if n_lines % 4 != 0:
+            n_lines +=1
+        fig, axes = plt.subplots(n_lines,n_columns, figsize=(15, 10))
+        axes_1 = axes.flatten()
+        for ax,typecode,pca_emb in zip(axes_1,typecodes,total_pca):
+            ax.scatter(
+                pca_emb[:-num_point, 0],
+                pca_emb[:-num_point, 1],
+                s=4,
+                c="grey",
+                label="True",
+            )
+            ax.scatter(
+                pca_emb[-num_point:, 0],
+                pca_emb[-num_point:, 1],
+                s=4,
+                c="blue",
+                label="Generated",
+            )
+            ax.title.set_text(f"Latent Space {typecode}")
+            ax.legend()
+        plt.show()
+        plt.savefig(plt_path)
+
+    return 0
+
+
+def latent_space_VAE(
+    typecodes:list[str],
+    num_point: int,
+    models :list[str],
+    plt_path: str,
+    traff :Traffic,
+) -> int:
+    """Plots the latent space associated to the selected label of the CVAE"""
+
+
+    total_pca = []
+
+    for label,model_path in zip(typecodes,models):
+        data_cleaner = Data_cleaner(no_data=True)
+        data_cleaner.load_scalers(model_path+'/scalers.pkl')
+        model = VAE_ONNX(model_path)
+        traffic_curated = traff.query(f"typecode =='{label}'")
+
+        data = data_cleaner.clean_data_specific(traffic_curated)[
+            : min(num_point, len(traffic_curated))
+        ]
+
+        labels_true = np.array(
+            [label for _ in traffic_curated[: min(num_point, len(traffic_curated))]]
+        ).reshape(-1, 1)
+        transformed_true_labels = data_cleaner.one_hot.transform(labels_true)
+
+        train, _ = get_data_loader_labels(data, transformed_true_labels, 500, 0.99)
+
+        list_tensor = [batch[0] for batch in train]
+        all_tensor = torch.concat(list_tensor)
+
+        list_labels = [labels for _, labels in train]
+        all_labels = torch.concat(list_labels)
+        all_tensor = all_tensor.permute(0, 2, 1)
+
+        ## getting mu and sigma
+        mu, log_var = model.encode(all_tensor)
+        scale = (log_var / 2).exp()
+        # get the actual distribution
+        distribution = Independent(Normal(mu, scale), 1)
+
+        posterior_samples = distribution.rsample()
+
+        prior_sample = model.sample_from_prior(num_point).squeeze(1)
+        print(f"posterior shape {posterior_samples.shape}")
+        print(f"prior shape : {prior_sample.shape}")
+
+        total = np.concat(
+            (
+                posterior_samples.cpu().detach().numpy(),
+                prior_sample.cpu().detach().numpy(),
+            ),
+            axis=0,
+        )
+
+        
+        pca = PCA(n_components=2).fit(total[:-num_point])
+        embeded = pca.transform(total)
+        total_pca.append(embeded)
+
+    with plt.style.context("traffic"):
+        n_columns = 4
+        n_lines = len(typecodes) // 4
+        if n_lines % 4 != 0:
+            n_lines +=1
+        fig, axes = plt.subplots(n_lines,n_columns, figsize=(15, 10))
+        axes_1 = axes.flatten()
+        for ax,typecode,pca_emb in zip(axes_1,typecodes,total_pca):
+            ax.scatter(
+                pca_emb[:-num_point, 0],
+                pca_emb[:-num_point, 1],
+                s=4,
+                c="grey",
+                label="True",
+            )
+            ax.scatter(
+                pca_emb[-num_point:, 0],
+                pca_emb[-num_point:, 1],
+                s=4,
+                c="blue",
+                label="Generated",
+            )
+            ax.title.set_text(f"Latent Space {typecode}")
+            ax.legend()
+        plt.show()
         plt.savefig(plt_path)
 
     return 0

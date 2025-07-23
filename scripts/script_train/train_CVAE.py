@@ -238,7 +238,7 @@ def main() -> int:
     dilatation = 2
     dropout = 0.2
     pseudo_input_num = args.pseudo_in
-    patience = 30
+    patience = 250
     min_delta = -100
     print(in_channels)
     labels_latent = 16
@@ -268,12 +268,12 @@ def main() -> int:
         num_worker=6,
         init_std=args.scale,
         d_weight=bool(args.weights_data),
-        condition_pseudo_inputs=args.cond_pseudo
+        condition_pseudo_inputs=args.cond_pseudo,
     ).to(device)
-
+    print("here")
     print("n_traj =", len(data_cleaner.basic_traffic_data))
     ## Training the model
-    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=args.batch_size,step_size=20)
+    model.fit(data, labels, epochs=1000, lr=1e-3, batch_size=args.batch_size,step_size=150)
     model.save_model(args.weights)
     scalers_path = args.weights.split('.')[0] + "_scalers.pkl"
     data_cleaner.save_scalers(scalers_path)

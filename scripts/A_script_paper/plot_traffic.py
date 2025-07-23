@@ -4,8 +4,6 @@ import os
 from traffic.core.flight import Flight
 
 
-
-
 current_path = os.getcwd()
 sys.path.append(os.path.abspath(current_path))
 
@@ -68,6 +66,48 @@ def gen_per_vae(
     return vae_traffs
 
 
+import matplotlib.pyplot as plt
+from cartes.crs import Lambert93, PlateCarree
+
+
+def display_traffic_per_typecode(traff: Traffic, path: str) -> None:
+    all_traffic = []
+    labels = Counter(
+        list(
+            traff.data[traff.data["typecode"].notnull()]["typecode"].iloc[
+                0::200
+            ]
+        )
+    ).most_common(10)
+    print(labels)
+    for typecode, num_f in labels:
+        n_t = traff.query(f"typecode == '{typecode}'")
+        all_traffic.append((n_t, num_f))
+
+    all_traffic.sort(key=lambda x: x[1], reverse=True)
+    print([l for _, l in all_traffic])
+
+    with plt.style.context("traffic"):
+        fig, axes = plt.subplots(
+            2,
+            5,
+            subplot_kw=dict(projection=Lambert93()),
+            figsize=(15, 8),
+            sharex=True,
+            sharey=True,
+        )
+        axes = axes.flatten()
+
+        for ax, (traff, t_len) in tqdm(zip(axes, all_traffic), desc="Plotting"):
+            traff.sample(500).plot(ax, alpha=0.3, color="orange")
+            ax.set_title(f"Typecode: {traff[0].typecode},\n N = {t_len}")
+
+        #plt.tight_layout()
+        plt.savefig(path, dpi=600)
+        plt.show()
+        
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Training a CVAE")
 
@@ -87,7 +127,7 @@ def main() -> None:
 
     parser.add_argument(
         "--onnx_vaes",
-        nargs='+',
+        nargs="+",
         type=str,
         default=[],
         help="Path to acess the data",
@@ -108,15 +148,23 @@ def main() -> None:
         help="typecodes for which to consider the altitude profiles",
     )
 
+    parser.add_argument(
+        "--plot_per_typecode",
+        type=int,
+        default=0,
+        help="equal 1 if you want to plot a traff per typecode,else plots a signle traff containing all typecodes",
+    )
+
     args = parser.parse_args()
 
     def f_good(f: Flight, threshold: int = 1500) -> Flight:
-                if (f.data["altitude"] < threshold).any() == 0:  # and (
-                #     f.data[f.data["altitude"] < 20000]["altitude"].diff().max() < 2000
-                # ):
-                    return f
-                return None
+        if (f.data["altitude"] < threshold).any() == 0:  # and (
+            #     f.data[f.data["altitude"] < 20000]["altitude"].diff().max() < 2000
+            # ):
+            return f
+        return None
 
+    n = 1000
     if args.data == "":
         if args.onnx_dir != "":
             data_cleaner = Data_cleaner(
@@ -127,26 +175,62 @@ def main() -> None:
             onnx_gen = ONNX_Generator(
                 cvae_onnx, data_cleaner
             )  # used to gen from the CVAE
-            
-            traffs = onnx_gen.generate_n_flight_per_labels(args.typecodes, 1000) #to modify to not have several time the same _id
+
+            traffs = onnx_gen.generate_n_flight_per_labels(
+                args.typecodes, n
+            )  # to modify to not have several time the same _id
 
             f_traf: Traffic = sum(traffs)
-            filtered = f_traf.pipe(f_good).eval(desc="removing outliers")
-            
-            plot_traffic(f_traf,args.plot_path.split('.')[0]+"cvae.png")
-            plot_traffic(filtered,args.plot_path.split('.')[0]+"cvae_filtered.png")
-        if len(args.onnx_vaes) != 0:
-            traff = gen_per_vae(args.onnx_vaes,args.typecodes,1000)
 
+            tc = [
+                args.typecodes[i // (n * 200)]
+                for i in range(n * len(args.typecodes) * 200)
+            ]
+            icao24 = [i // 200 for i in range(n * len(args.typecodes) * 200)]
+            callsign = icao24
+
+            f_traf = f_traf.assign(typecode=tc)
+            f_traf = f_traf.assign(icao24=icao24)
+            f_traf = f_traf.assign(callsign=callsign)
+            
+
+            f_traf = f_traf.assign_id().eval(
+                desc="assigning ids", max_workers=4
+            )
+            filtered = f_traf.pipe(f_good).eval(desc="removing outliers")
+            if not args.plot_per_typecode:
+                plot_traffic(f_traf, args.plot_path.split(".")[0] + "cvae.png")
+                plot_traffic(
+                    filtered, args.plot_path.split(".")[0] + "cvae_filtered.png"
+                )
+            else:
+                display_traffic_per_typecode(
+                    f_traf, args.plot_path.split(".")[0] + "cvae.png"
+                )
+                display_traffic_per_typecode(
+                    filtered, args.plot_path.split(".")[0] + "cvae_filtered.png"
+                )
+
+        if len(args.onnx_vaes) != 0:
+            traff = gen_per_vae(args.onnx_vaes, args.typecodes, n)
 
             filtered = traff.pipe(f_good).eval(desc="removing outliers")
-            plot_traffic(traff,args.plot_path.split('.')[0]+"vae.png")
-            plot_traffic(filtered,args.plot_path.split('.')[0]+"vae_filtered.png")
+            if not args.plot_per_typecode:
+                plot_traffic(traff, args.plot_path.split(".")[0] + "vae.png")
+                plot_traffic(
+                    filtered, args.plot_path.split(".")[0] + "vae_filtered.png"
+                )
+            else:
+                display_traffic_per_typecode(
+                    traff, args.plot_path.split(".")[0] + "vae.png"
+                )
+                display_traffic_per_typecode(
+                    filtered, args.plot_path.split(".")[0] + "vae_filtered.png"
+                )
             print(len(traff))
     else:
         traff = Traffic.from_file(args.data)
-        plot_traffic(traff,args.plot_path)
-    
+        plot_traffic(traff, args.plot_path)
 
 
 if __name__ == "__main__":

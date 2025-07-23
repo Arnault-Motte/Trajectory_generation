@@ -299,39 +299,60 @@ def mean_alt_spd(f: Flight, nav_p: Flight) -> list:
     ]  # remove succesives duplicates
     print(f_start, " ", nav_p.data.iloc[0].start)
     print(f_start, " ", nav_p.data)
-    for _, n_p in new_nav.iterrows():
-            t_small = f.after(t_first)
-            if t_small is not None:
-                t_small = t_small.before(n_p.stop)
-            # else:
-            #     print(t_first)
-            #     print(n_p.stop)
-            #     print(new_nav)
-            #     input("kill me")
-            if t_small is None:
-                # print(f.data["timedelta"].head(10))
-                print("None ", t_first)
-                print("None ", n_p.stop)
+
+    t_small = f.before(new_nav.iloc[0].start)
+    if f.before(new_nav.iloc[0].start) is not None:
+        mean_speed = t_small.data["groundspeed"].mean()
+        mean_alt = t_small.data["altitude"].mean()
+        alt_speed_list.append(
+            {
+                "spd": mean_speed,
+                "alt": mean_alt,
+                "timestamp": t_first,
+                "name": "start",
+                "start": f_start,
+                "stop": new_nav.iloc[0].start,
+            }
+        )
+
+    new_nav = new_nav.reset_index(drop=True)
+    for i, n_p in new_nav.iterrows():
+        t_small = f.after(n_p.start)
+        if t_small is not None:
+            if i != len(new_nav) - 1:
+                next = new_nav.iloc[i + 1]
+                t_small = t_small.before(next.start)
             else:
-                mean_speed = t_small.data["groundspeed"].mean()
-                mean_alt = t_small.data["altitude"].mean()
-                print(mean_speed, mean_alt)
-                # dic[n_p.navaid] = {
-                #     "spd": mean_speed,
-                #     "alt": mean_alt,
-                #     "timestamp": t_first,
-                # }
-                alt_speed_list.append(
-                    {
-                        "spd": mean_speed,
-                        "alt": mean_alt,
-                        "timestamp": t_first,
-                        "name": n_p.navaid,
-                        'start':n_p.start,
-                        'stop': n_p.stop,
-                    }
-                )
-            t_first = n_p.stop
+                t_small = t_small.before(n_p.stop)
+        # else:
+        #     print(t_first)
+        #     print(n_p.stop)
+        #     print(new_nav)
+        #     input("kill me")
+        if t_small is None:
+            # print(f.data["timedelta"].head(10))
+            print("None ", t_first)
+            print("None ", n_p.stop)
+        else:
+            mean_speed = t_small.data["groundspeed"].mean()
+            mean_alt = t_small.data["altitude"].mean()
+            print(mean_speed, mean_alt)
+            # dic[n_p.navaid] = {
+            #     "spd": mean_speed,
+            #     "alt": mean_alt,
+            #     "timestamp": t_first,
+            # }
+            alt_speed_list.append(
+                {
+                    "spd": mean_speed,
+                    "alt": mean_alt,
+                    "timestamp": t_first,
+                    "name": n_p.navaid,
+                    "start": n_p.start,
+                    "stop": n_p.stop,
+                }
+            )
+        t_first = n_p.start
 
     t_small = f.after(t_first)
     if t_small is not None:
@@ -344,8 +365,8 @@ def mean_alt_spd(f: Flight, nav_p: Flight) -> list:
                 "alt": mean_alt,
                 "timestamp": t_first,
                 "name": "end",
-                'start':t_first,
-                'stop': f.stop,
+                "start": new_nav.iloc[-1].stop,
+                "stop": f.stop,
             }
         )
 
@@ -381,21 +402,22 @@ def gen_instruct_f(
         # print(row)
         if row["name"] != prev_wpt and row["name"] != "end":
             if i != 0:
-                diff_time = (start - previous_start).total_seconds()
+                diff_time = (row["start"] - previous_start).total_seconds()
                 text += schedule(
                     diff_time,
                     addwpt(acid, row["name"]),
                 )  # directing the trajectory towards the waypoint
-                text += schedule(
-                    diff_time, delwpt(acid, prev_wpt)
-                )  # deleting the previous waypoint, useful if the waypoint is never reached
+                if prev_wpt != "start":
+                    text += schedule(
+                        diff_time, delwpt(acid, prev_wpt)
+                    )  # deleting the previous waypoint, useful if the waypoint is never reached
                 text += schedule(
                     diff_time, set_alt(acid, row["alt"])
                 )  # deleting the previous waypoint, useful if the waypoint is never reached
                 text += schedule(
                     diff_time, set_spd(acid, row["spd"])
                 )  # deleting the previous waypoint, useful if the waypoint is never reached
-                start = row["stop"]
+                # start = start = means[i + 1]["start"]
             else:
                 text += cre(
                     acid,
@@ -406,14 +428,18 @@ def gen_instruct_f(
                     row["alt"],
                     row["spd"],
                 )
-                text += addwpt(acid, row["name"])
-                start = row["stop"]
+                if row["name"] != "start":
+                    text += addwpt(acid, row["name"])
+                # start = means[i + 1]["start"]
+            # start = means[i + 1]["start"] #keep beeing directed towards teh waypoint until new allignement is detected
+            
+
             prev_wpt = row["name"]
 
     if "end" == means[-1]["name"]:
         print(means)
         print(flight.stop)
-        diff_time = (flight.stop - previous_start).total_seconds()
+        diff_time = (means[-1]["start"] - previous_start).total_seconds()
 
         text += schedule(
             diff_time, delwpt(acid, prev_wpt)
@@ -631,8 +657,8 @@ class Simulator:
         Loads the navpoints from a csv file
         """
         t_data = pd.read_csv(path, header=0)
-        t_data["start"] = pd.to_datetime(t_data["start"], utc=True)
-        t_data["stop"] = pd.to_datetime(t_data["stop"], utc=True)
+        t_data["start"] = pd.to_datetime(t_data["start"], utc=True,format="mixed")
+        t_data["stop"] = pd.to_datetime(t_data["stop"], utc=True,format="mixed")
         t_data["duration"] = pd.to_timedelta(t_data["duration"])
         t = Traffic(t_data)
         return t
