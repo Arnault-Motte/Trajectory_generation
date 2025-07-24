@@ -8,11 +8,11 @@ print("Current working directory:", current_path)
 print(os.path.dirname(__file__))
 
 
-import torch
-
-from data_orly.src.generation.data_process import Data_cleaner
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
 import argparse
+
+import torch
+from src.data_process import Data_cleaner
+from src.models.VAE_TCN_VampPrior import *  # noqa: F403
 from traffic.core import Traffic
 
 
@@ -145,7 +145,7 @@ def main() -> int:
     ## Training the model
     model.fit(data, epochs=1000, lr=1e-3, batch_size=500)
     model.save_model(args.weights)
-    path = "data_orly/models_paper/" + args.weights.split("/")[-1].split(".")[0]
+    path = "models_paper/" + args.weights.split("/")[-1].split(".")[0]
     model.save_model_ONNX(
         path
     )

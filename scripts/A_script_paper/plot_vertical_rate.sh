@@ -1,2 +1,2 @@
-uv run data_orly/scripts/A_script_paper/plot_vertical_rate.py --onnx_dir "data_orly/models_paper/CVAE_minority" --plot_path "data_orly/figures/paper/vertical_rate/CVAE_minority/v_rate_gen.png" --typecodes B738 A320 A321 A21N
-uuv run data_orly/scripts/A_script_paper/plot_vertical_rate.py --data "/data/data/arnault/data/final_data/TO_LFPO_test_final.pkl" --plot_path "data_orly/figures/paper/vertical_rate/CVAE_minority/v_rate_gen.png" --typecodes B738 A320 A321 A21N
+uv run scripts/A_script_paper/plot_vertical_rate.py --onnx_dir "models_paper/CVAE_minority" --plot_path "figures/paper/vertical_rate/CVAE_minority/v_rate_gen.png" --typecodes B738 A320 A321 A21N
+uuv run scripts/A_script_paper/plot_vertical_rate.py --data "/data/data/arnault/data/final_data/TO_LFPO_test_final.pkl" --plot_path "figures/paper/vertical_rate/CVAE_minority/v_rate_gen.png" --typecodes B738 A320 A321 A21N

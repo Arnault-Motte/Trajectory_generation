@@ -1,17 +1,17 @@
-import yaml
 import pickle
-
 from pathlib import Path
+
 import pandas as pd
+import yaml
 
 directory = Path(
-    "/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/aircrafts_spec"
+    "/home/arnault/traffic/scripts/A_script_paper/model_spec/aircrafts_spec"
 )
 dict_spec = {}
 
 
 engines = pd.read_csv(
-    "/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/engines.csv"
+    "/home/arnault/traffic/scripts/A_script_paper/model_spec/engines.csv"
 )
 
 for file_path in directory.glob("*.yml"):
@@ -44,8 +44,8 @@ print(df_normalized)
 dic_normalize = df_normalized.to_dict()
 print(dic_normalize)
 
-with open("/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", "wb") as handle:
+with open("/home/arnault/traffic/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", "wb") as handle:
     pickle.dump(dic_normalize, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-with open("/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/dic_spec.pkl", "wb") as handle:
+with open("/home/arnault/traffic/scripts/A_script_paper/model_spec/dic_spec.pkl", "wb") as handle:
     pickle.dump(dict_spec, handle, protocol=pickle.HIGHEST_PROTOCOL)

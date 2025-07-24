@@ -11,12 +11,12 @@ sys.path.append(os.path.abspath(current_path))
 print("Current working directory:", current_path)
 print(os.path.dirname(__file__))
 
-from traffic.core import Traffic, Flight
-from traffic.core.mixins import PointMixin
 from cartes.crs import Lambert93, PlateCarree
+from traffic.core import Flight, Traffic
+from traffic.core.mixins import PointMixin
 
 t = Traffic.from_file(
-    "data_orly/data/sampled_data/combined_data/B738_A320_10000_1e3.pkl"
+    "data/sampled_data/combined_data/B738_A320_10000_1e3.pkl"
 )
 
 data = t.data

@@ -12,20 +12,19 @@ print(os.path.dirname(__file__))
 import argparse
 
 import torch
-
-from data_orly.src.generation.data_process import (
+from src.data_process import (
     Data_cleaner,
-    return_traff_per_typecode,
-    filter_missing_values,
     compute_time_delta,
+    filter_missing_values,
+    return_traff_per_typecode,
 )
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
-from data_orly.src.generation.test_display import plot_distribution_typecode
-from traffic.core import Traffic
-from data_orly.src.generation.generation import ONNX_Generator
+from src.generation import ONNX_Generator
+from src.models.CVAE_ONNX import CVAE_ONNX
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.VAE_TCN_VampPrior import *  # noqa: F403
+from src.test_display import plot_distribution_typecode
 from tqdm import tqdm
+from traffic.core import Traffic
 
 
 def main() -> None:

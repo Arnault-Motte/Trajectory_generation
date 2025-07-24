@@ -1,1 +1,0 @@
-uv run python data_orly/scripts/script_train/train_VAE.py --data data_orly/data/takeoffs_LFPO_07.pkl --weights data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_alt_cond_A321.pth --typecodes A321 --cuda 0

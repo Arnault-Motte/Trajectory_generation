@@ -7,7 +7,7 @@ class Early_stopping:
         self,
         patience: int = 10,
         min_delta: float = 0.0,
-        best_model_path: str = "data_orly/src/generation/models/saved_temp/best_model.pth",
+        best_model_path: str = "src/generation/models/saved_temp/best_model.pth",
     ) -> None:
         self.patience = patience
         self.min_delta = min_delta

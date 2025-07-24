@@ -3,10 +3,10 @@ import pickle
 from datetime import datetime, time, timedelta, timezone
 from typing import Iterator, Optional
 
+import pandas as pd
+
 # import minisky
 from tqdm import tqdm
-
-import pandas as pd
 from traffic.core import Flight, Traffic
 from traffic.data import navaids
 
@@ -649,7 +649,7 @@ class Simulator:
             .pipe(navpoints_table)
             .eval(desc="navpoints table", max_workers=12)
         )
-        t.to_csv("data_orly/temp_navp/tcvae_generation_navpoints.csv")
+        t.to_csv("temp_navp/tcvae_generation_navpoints.csv")
         return t
 
     def load_navpoints(self, path: str) -> Traffic:

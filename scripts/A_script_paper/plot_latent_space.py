@@ -1,9 +1,8 @@
+import os
 import pickle
 import sys  # noqa: I001
-import os
 
 from tqdm import tqdm
-
 
 CURRENT_PATH = os.getcwd()
 sys.path.append(os.path.abspath(CURRENT_PATH))
@@ -12,36 +11,33 @@ print(os.path.dirname(__file__))
 
 
 import argparse
+import statistics
 
+import altair as alt
+import numpy as np
+import pandas as pd
 import torch
-
-from data_orly.src.generation.data_process import (
+from pitot import aero
+from scipy.spatial.distance import pdist, squareform
+from src.data_process import (
     Data_cleaner,
-    return_labels,
     compute_time_delta,
     compute_vertical_rate,
+    return_labels,
 )
-from data_orly.src.generation.generation import Generator, ONNX_Generator
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
-from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.test_display import (
-    plot_traffic,
-    vertical_rate_profile_2,
+from src.generation import Generator, ONNX_Generator
+from src.models.CVAE_ONNX import CVAE_ONNX
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.VAE_ONNX import VAE_ONNX
+from src.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from src.simulation import Simulator
+from src.test_display import (
     latent_space_CVAE,
     latent_space_VAE,
+    plot_traffic,
+    vertical_rate_profile_2,
 )
-
-from data_orly.src.simulation import Simulator
-from traffic.core import Traffic, Flight
-from pitot import aero
-import altair as alt
-import pandas as pd
-import numpy as np
-from scipy.spatial.distance import pdist, squareform
-import pandas as pd
-import statistics
+from traffic.core import Flight, Traffic
 
 
 def main() -> None:

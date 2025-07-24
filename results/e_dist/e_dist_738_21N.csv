@@ -1,5 +1,0 @@
-Model_Path, Model_type, typecode, typecodes, e_dist 
-data_orly/src/generation/models/saved_weights/limited_one_typecode/test_B738_A21N/VAE_A21N_151.pth, VAE_TCN_Vamp, , ['A21N'], 1.0420282479027487
-data_orly/src/generation/models/saved_weights/limited_one_typecode/test_B738_A21N/VAE_A21N_151.pth, VAE_TCN_Vamp, , ['A21N'], 1.0319315414683037
-data_orly/src/generation/models/saved_weights/limited_one_typecode/test_B738_A21N/VAE_B738.pth, VAE_TCN_Vamp, , ['B738'], 0.01168446687097581
-data_orly/src/generation/models/saved_weights/limited_one_typecode/test_B738_A21N/CVAE_both_B738_A21N_151.pth, CVAE_TCN_Vamp, A21N, ['B738', 'A21N'], 0.07012207925597408

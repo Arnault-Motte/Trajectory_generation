@@ -3,10 +3,11 @@
 import pandas as pd
 
 df = pd.read_csv(
-    "/home/arnault/traffic/data_orly/figures/paper/compare_profile/profile_end/mean_profile_no_filter_centroid_mean_profiles.csv"
+    "/home/arnault/traffic/figures/paper/compare_profile/profile_end/mean_profile_no_filter_centroid_mean_profiles.csv"
 )
 # %%
 import altair as alt
+
 alt.data_transformers.enable("vegafusion")
 
 alt.Chart(df).mark_line().encode(

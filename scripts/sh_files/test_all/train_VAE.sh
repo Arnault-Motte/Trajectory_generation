@@ -1,3 +1,0 @@
-uv run data_orly/scripts/script_train/train_VAE.py --data /data/data/arnault/data/final_data/TO_LFPO_final.pkl --weights data_orly/src/generation/models/saved_weights/full/VAE_total_f.pth --l_dim 64 --pseudo_in 1000
-
-uv run data_orly/scripts/script_train/train_VAE.py --data "/data/data/arnault/data/takeoffs_LFPO_07.pkl" --weights data_orly/src/generation/models/saved_weights/full/VAE_total_old_data.pth --l_dim 64 --pseudo_in 1000

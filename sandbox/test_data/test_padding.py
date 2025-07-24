@@ -1,8 +1,7 @@
-from traffic.core import Traffic
-
-import sys  # noqa: I001
 import os
+import sys  # noqa: I001
 
+from traffic.core import Traffic
 
 current_path = os.getcwd()
 sys.path.append(os.path.abspath(current_path))
@@ -11,10 +10,10 @@ print("Current working directory:", current_path)
 print(os.path.dirname(__file__))
 
 
-from data_orly.src.generation.data_process import split_trajectories_label
+from src.data_process import split_trajectories_label
 
 traff = Traffic.from_file(
-    "/home/arnault/traffic/data_orly/data/sampled_data/combined_data/B738_A320_all2.pkl"
+    "/home/arnault/traffic/data/sampled_data/combined_data/B738_A320_all2.pkl"
 )
 
 # traff = Traffic(traff.data[["track","altitude","groundspeed",'timedelta']])

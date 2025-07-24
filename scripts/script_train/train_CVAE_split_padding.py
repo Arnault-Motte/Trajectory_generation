@@ -11,15 +11,14 @@ print(os.path.dirname(__file__))
 
 import argparse
 
-import torch
 import numpy as np
-
-from data_orly.src.generation.data_process import (
+import torch
+from src.data_process import (
     Data_cleaner,
     return_traff_per_typecode,
 )
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.VAE_TCN_VampPrior import *  # noqa: F403
 from traffic.core import Traffic
 
 

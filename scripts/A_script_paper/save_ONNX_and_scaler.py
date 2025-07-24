@@ -14,15 +14,14 @@ print(os.path.dirname(__file__))
 import argparse
 
 import torch
-
-from data_orly.src.generation.data_process import Data_cleaner,return_labels
-from data_orly.src.generation.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
-from data_orly.src.generation.generation import Generator,ONNX_Generator
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.test_display import plot_traffic,vertical_rate_profile_2
-from data_orly.src.simulation import Simulator
+from src.data_process import Data_cleaner, return_labels
+from src.generation import Generator, ONNX_Generator
+from src.models.CVAE_ONNX import CVAE_ONNX
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
+from src.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from src.simulation import Simulator
+from src.test_display import plot_traffic, vertical_rate_profile_2
 from traffic.core import Traffic
 
 
@@ -32,7 +31,7 @@ def main() -> None:
     parser.add_argument(
         "--weight_file",
         type=str,
-        default="/home/arnault/traffic/data_orly/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_vr_direct_cond_A21N.pth",
+        default="/home/arnault/traffic/src/generation/models/saved_weights/limited_one_typecode/VAE_TCN_Vampprior_take_off_7_vr_direct_cond_A21N.pth",
         help="Path of the weight file",
     )
 
@@ -73,7 +72,7 @@ def main() -> None:
     parser.add_argument(
         "--data",
         type=str,
-        default="data_orly/data/takeoffs_LFPO_07.pkl",
+        default="data/takeoffs_LFPO_07.pkl",
         help="path to the data",
     )
 

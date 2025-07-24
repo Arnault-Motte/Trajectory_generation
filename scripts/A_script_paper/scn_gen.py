@@ -10,13 +10,12 @@ print(os.path.dirname(__file__))
 import argparse
 
 import torch
-
-from data_orly.src.generation.data_process import Data_cleaner
-from data_orly.src.generation.generation import Generator, ONNX_Generator
-from data_orly.src.generation.models.CVAE_ONNX import CVAE_ONNX
-from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
-from data_orly.src.generation.test_display import plot_traffic
-from data_orly.src.simulation import Simulator
+from src.data_process import Data_cleaner
+from src.generation import Generator, ONNX_Generator
+from src.models.CVAE_ONNX import CVAE_ONNX
+from src.models.VAE_ONNX import VAE_ONNX
+from src.simulation import Simulator
+from src.test_display import plot_traffic
 from traffic.core import Traffic
 
 

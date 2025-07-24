@@ -12,19 +12,21 @@ print(os.path.dirname(__file__))
 import argparse
 
 import torch
-
-from data_orly.src.generation.data_process import Data_cleaner, return_labels
-from data_orly.src.generation.generation import Generator, ONNX_Generator
-from data_orly.src.generation.models.VAE_ONNX import VAE_ONNX
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
-from data_orly.src.generation.test_display import (
+from src.data_process import (
+    Data_cleaner,
+    compute_vertical_rate,
+    return_labels,
+)
+from src.generation import Generator, ONNX_Generator
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.VAE_ONNX import VAE_ONNX
+from src.models.VAE_TCN_VampPrior import VAE_TCN_Vamp
+from src.simulation import Simulator
+from src.test_display import (
     plot_traffic,
     vertical_rate_profile_2,
 )
-from data_orly.src.simulation import Simulator
 from traffic.core import Traffic
-from data_orly.src.generation.data_process import compute_vertical_rate
 
 
 def main() -> None:
@@ -59,7 +61,7 @@ def main() -> None:
     traff = onnx_gen.generate_n_flight(100,10)
     plot_path = args.plot_dir
     if plot_path == "":
-            plot_path = "data_orly/figures/paper/" + args.onnx_dir.split('/')[-1]
+            plot_path = "figures/paper/" + args.onnx_dir.split('/')[-1]
             os.makedirs(plot_path, exist_ok=True)
         
     plot_path = plot_path + "/traffic.png"

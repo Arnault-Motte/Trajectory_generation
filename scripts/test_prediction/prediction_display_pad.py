@@ -10,28 +10,25 @@ print(os.path.dirname(__file__))
 
 
 import argparse
+import random
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import torch
 from cartes.crs import Lambert93
-
-import numpy as np
-from data_orly.src.generation.data_process import (
+from src.core.networks import get_data_loader
+from src.data_process import (
     Data_cleaner,
     return_traff_per_typecode,
 )
-from data_orly.src.generation.test_display import plot_traffic
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import (
+from src.models.CVAE_TCN_VampPrior import (
     CVAE_TCN_Vamp,
 )
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
+from src.models.VAE_TCN_VampPrior import *  # noqa: F403
+from src.test_display import plot_traffic
 from traffic.core import Flight, Traffic
 from traffic.data import airports
-from data_orly.src.core.networks import get_data_loader
-
-import random
-import pandas as pd
-
 
 # def from_f_return_f_label(f: Flight, mask: list[bool]) -> Traffic:
 #     #print(mask)

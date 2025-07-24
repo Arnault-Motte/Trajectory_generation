@@ -12,17 +12,17 @@ print(os.path.dirname(__file__))
 
 import argparse
 import pickle
-import torch
 
-from data_orly.src.generation.data_process import (
+import torch
+from src.data_process import (
     Data_cleaner,
     compute_time_delta,
     filter_missing_values,
     return_traff_per_typecode,
 )
-from data_orly.src.generation.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
-from data_orly.src.generation.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
-from data_orly.src.generation.models.VAE_TCN_VampPrior import *  # noqa: F403
+from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
+from src.models.CVAE_TCN_VampPrior_old import CVAE_TCN_Vamp_old
+from src.models.VAE_TCN_VampPrior import *  # noqa: F403
 from traffic.core import Traffic
 
 
@@ -203,7 +203,7 @@ def main() -> int:
     print(combined_traff.data.columns)
     
     if args.spec == 1:
-        with open("/home/arnault/traffic/data_orly/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", 'rb') as handle:
+        with open("/home/arnault/traffic/scripts/A_script_paper/model_spec/dic_spec_norm.pkl", 'rb') as handle:
             dic_spec = pickle.load(handle)
     else:
         dic_spec =None
@@ -277,7 +277,7 @@ def main() -> int:
     model.save_model(args.weights)
     scalers_path = args.weights.split('.')[0] + "_scalers.pkl"
     data_cleaner.save_scalers(scalers_path)
-    path = "data_orly/models_paper/" + args.weights.split("/")[-1].split(".")[0]
+    path = "models_paper/" + args.weights.split("/")[-1].split(".")[0]
     model.save_model_ONNX(
         path
     )
