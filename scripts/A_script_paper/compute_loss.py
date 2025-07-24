@@ -132,6 +132,14 @@ def main() -> None:
         help="Number of flight to generate",
     )
 
+
+    parser.add_argument(
+        "--cond_pseudo",
+        type=int,
+        default=0,
+        help="True if you want the cvae has conditioned pseudo inputs",
+    )
+
     args = parser.parse_args()
 
     print(args.typecodes)
@@ -146,7 +154,7 @@ def main() -> None:
         )  # saves scalers, and scales and modifies data, allows to interpret the model outputs
         data_cleaner.load_scalers(args.CVAE_ONNX + "/scalers.pkl")
         # generating with CVAE
-        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX)  # the CVAE
+        cvae_onnx = CVAE_ONNX(args.CVAE_ONNX,condition_pseudo=args.cond_pseudo)  # the CVAE
 
         for typecode in args.typecodes:
             test_data, typecodes_tensor = traff_data_to_tensors(

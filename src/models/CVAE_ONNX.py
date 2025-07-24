@@ -1,7 +1,6 @@
 import os
 from collections import Counter
 
-import numpy as np
 import onnx
 import onnxruntime as ort
 import torch
@@ -9,13 +8,15 @@ import torch.distributions as distrib
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from src.core.early_stop import Early_stopping
-from src.core.loss import *
-from src.core.networks import *
 from torch.nn.utils import weight_norm
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from tqdm import tqdm
+
+import numpy as np
+from src.core.early_stop import Early_stopping
+from src.core.loss import *
+from src.core.networks import *
 
 
 def compute_class_weights(data_loader: DataLoader, type: str = "raw") -> dict:
@@ -397,7 +398,7 @@ class CVAE_ONNX:
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
         print(f"Seq_len : {self.seq_len}")
-        self.log_std = torch.load(f"{onnx_dir}/log_std.pt", map_location=torch.device('cpu'))
+        self.log_std = torch.load(f"{onnx_dir}/log_std.pt",map_location="cpu")
 
         try:
             self.prior_weights_sess = ort.InferenceSession(
@@ -542,7 +543,7 @@ class CVAE_ONNX:
         torch.Tensor,
     ]:
         x = x.permute(0, 2, 1)
-        if not self.condition_pseudo:
+        if not self.conditioned_pseudo:
             label = None
 
         mu_pseudo, log_var_pseudo = self.pseudo_inputs_latent(label)

@@ -53,7 +53,6 @@ src/models/AE_TCN.py
 src/models/CVAE_ONNX.py
 src/models/CVAE_TCN_VampPrior.py
 src/models/CVAE_TCN_VampPrior_old.py
-src/models/CVAE_TCN_VampPrior_olf.py
 src/models/CVAE_TCN_VampPrior_pred.py
 src/models/VAE_FCL.py
 src/models/VAE_ONNX.py

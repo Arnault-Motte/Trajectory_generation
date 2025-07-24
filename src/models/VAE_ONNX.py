@@ -1,17 +1,19 @@
-import numpy as np
-import onnx
-import onnxruntime as ort
 import torch
 import torch.distributions as distrib
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import StepLR
+from torch.utils.data import DataLoader
+
+import numpy as np
 from src.core.early_stop import Early_stopping
 from src.core.loss import *
 from src.core.networks import *
-from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
 from traffic.core import tqdm
+
+import onnx
+import onnxruntime as ort
 
 
 ## Encoder
@@ -118,11 +120,11 @@ class VAE_ONNX:
             providers=["CPUExecutionProvider"],
         )
 
-        self.prior_weights: torch.Tensor = torch.load(f"{onnx_dir}/prior_w.pt",map_location=torch.device('cpu'))
+        self.prior_weights: torch.Tensor = torch.load(f"{onnx_dir}/prior_w.pt",map_location="cpu").cpu()
 
         encoder_input = self.encoder_sess.get_inputs()
         self.seq_len = encoder_input[0].shape[2]
-        self.log_std : torch.Tensor = torch.load(f"{onnx_dir}/log_std.pt", map_location=torch.device('cpu'))
+        self.log_std : torch.Tensor = torch.load(f"{onnx_dir}/log_std.pt",map_location="cpu")
         print(f"Seq_len : {self.seq_len}")
 
     def encode(

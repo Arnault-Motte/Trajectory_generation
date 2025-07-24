@@ -14,23 +14,23 @@ print(os.path.dirname(__file__))
 import argparse
 
 import torch
+
 from src.data_process import (
     Data_cleaner,
-    compute_time_delta,
-    filter_missing_values,
     return_traff_per_typecode,
+    filter_missing_values,
+    compute_time_delta,
 )
-from src.generation import ONNX_Generator
-from src.models.CVAE_ONNX import CVAE_ONNX
 from src.models.CVAE_TCN_VampPrior import CVAE_TCN_Vamp
 from src.models.VAE_ONNX import VAE_ONNX
+from src.models.CVAE_ONNX import CVAE_ONNX
 from src.models.VAE_TCN_VampPrior import *  # noqa: F403
-from src.test_display import (
-    plot_distribution_typecode,
-    plot_traffic,
-)
-from tqdm import tqdm
+from src.test_display import plot_distribution_typecode
 from traffic.core import Traffic
+from src.generation import ONNX_Generator
+from tqdm import tqdm
+
+from src.test_display import plot_traffic
 
 
 def gen_per_vae(
@@ -98,12 +98,14 @@ def display_traffic_per_typecode(traff: Traffic, path: str) -> None:
         )
         axes = axes.flatten()
 
-        for ax, (traff, t_len) in tqdm(zip(axes, all_traffic), desc="Plotting"):
-            traff.sample(500).plot(ax, alpha=0.3, color="orange")
-            ax.set_title(f"Typecode: {traff[0].typecode},\n N = {t_len}")
+        for ax, (traff,count), label in tqdm(
+            zip(axes, all_traffic, labels), desc="Plotting"
+        ):
+            traff.plot(ax, alpha=0.5, color="orange")
+            ax.set_title(f"Typecode: {label},\n N = {len(traff)}")
 
-        #plt.tight_layout()
-        plt.savefig(path, dpi=600)
+        plt.tight_layout()
+        plt.savefig(path)
         plt.show()
         
 
