@@ -98,12 +98,14 @@ def display_traffic_per_typecode(traff: Traffic, path: str) -> None:
         )
         axes = axes.flatten()
 
-        for ax, (traff, t_len) in tqdm(zip(axes, all_traffic), desc="Plotting"):
-            traff.sample(500).plot(ax, alpha=0.3, color="orange")
-            ax.set_title(f"Typecode: {traff[0].typecode},\n N = {t_len}")
+        for ax, (traff,count), label in tqdm(
+            zip(axes, all_traffic, labels), desc="Plotting"
+        ):
+            traff.plot(ax, alpha=0.5, color="orange")
+            ax.set_title(f"Typecode: {label},\n N = {len(traff)}")
 
-        #plt.tight_layout()
-        plt.savefig(path, dpi=600)
+        plt.tight_layout()
+        plt.savefig(path)
         plt.show()
         
 

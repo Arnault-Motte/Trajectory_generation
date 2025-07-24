@@ -754,7 +754,7 @@ def display_traffic_per_typecode(
         for ax, traff, label in tqdm(
             zip(axes, all_traffic, labels), desc="Plotting"
         ):
-            traff.plot(ax, alpha=0.5, color="orange")
+            traff.sample(min(500,len(traff))).plot(ax, alpha=0.5, color="orange")
             ax.set_title(f"Typecode: {label},\n N = {len(traff)}")
 
         plt.tight_layout()

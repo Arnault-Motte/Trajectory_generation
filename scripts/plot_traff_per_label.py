@@ -9,7 +9,7 @@ import datetime
 import pandas as pd
 from data_orly.src.generation.data_process import Data_cleaner
 from data_orly.src.generation.models.AE_FCL import *  # noqa: F403
-from data_orly.src.generation.test_display import Displayer
+from data_orly.src.generation.test_display import display_traffic_per_typecode
 from traffic.algorithms.generation import compute_latlon_from_trackgs
 from traffic.core import Traffic
 
@@ -19,10 +19,9 @@ def main() -> int:
     print(device)
     ## Getting the data
 
-    data_cleaner = Data_cleaner("data_orly/data/takeoffs_LFPO_07.pkl")
-    displayer = Displayer(data_clean=data_cleaner)
+    data_cleaner = Data_cleaner("/data/data/arnault/data/final_data/TO_LFPO_final.pkl")
 
-    displayer.display_traffic_per_typecode("data_orly/figures/og_data/traffic_per_typecode.png")
+    display_traffic_per_typecode(data_cleaner,"data_orly/figures/og_data/traffic_per_typecode_n_data.png")
 
 
     return 0
